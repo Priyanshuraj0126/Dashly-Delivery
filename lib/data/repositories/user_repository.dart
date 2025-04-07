@@ -1,0 +1,191 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../core/services/firebase/firebase_service.dart';
+
+class UserRepository {
+  final FirebaseService _firebaseService;
+  final String _collection = 'delivery_boys';
+
+  UserRepository({required FirebaseService firebaseService})
+      : _firebaseService = firebaseService;
+
+  /// Get user profile by ID
+  Future<Map<String, dynamic>?> getProfile(String userId) async {
+    try {
+      final doc = await _firebaseService.getDocument(_collection, userId);
+      if (doc.exists) {
+        return doc.data();
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Failed to get profile: $e');
+    }
+  }
+
+  /// Update user profile
+  Future<void> updateProfile(String userId, Map<String, dynamic> data) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          ...data,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update profile: $e');
+    }
+  }
+
+  /// Upload document for user
+  Future<String> uploadDocument(
+    String userId,
+    String documentType,
+    String filePath,
+  ) async {
+    try {
+      final path = 'documents/$userId/$documentType';
+      final url = await _firebaseService.uploadFile(path, filePath);
+
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'documents.$documentType': url,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+
+      return url;
+    } catch (e) {
+      throw Exception('Failed to upload document: $e');
+    }
+  }
+
+  /// Complete user onboarding
+  Future<void> completeOnboarding(
+    String userId,
+    Map<String, dynamic> onboardingData,
+  ) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          ...onboardingData,
+          'isProfileComplete': true,
+          'onboardingCompletedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to complete onboarding: $e');
+    }
+  }
+
+  /// Update user's current location
+  Future<void> updateLocation(
+    String userId,
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'currentLocation': {
+            'latitude': latitude,
+            'longitude': longitude,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update location: $e');
+    }
+  }
+
+  /// Update user's online status
+  Future<void> updateOnlineStatus(String userId, bool isOnline) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'isOnline': isOnline,
+          'statusUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update online status: $e');
+    }
+  }
+
+  /// Update user's assigned zone
+  Future<void> updateAssignedZone(String userId, String zoneId) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'zoneId': zoneId,
+          'zoneUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update assigned zone: $e');
+    }
+  }
+
+  /// Update user's FCM token
+  Future<void> updateFcmToken(String userId, String token) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'fcmToken': token,
+          'tokenUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update FCM token: $e');
+    }
+  }
+
+  /// Update user's statistics
+  Future<void> updateStatistics(
+    String userId,
+    Map<String, dynamic> statistics,
+  ) async {
+    try {
+      await _firebaseService.updateDocument(
+        _collection,
+        userId,
+        {
+          'statistics': statistics,
+          'statisticsUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    } catch (e) {
+      throw Exception('Failed to update statistics: $e');
+    }
+  }
+
+  /// Stream user profile changes
+  Stream<Map<String, dynamic>?> streamProfile(String userId) {
+    return _firebaseService.documentStream(_collection, userId).map((doc) {
+      if (doc.exists) {
+        return doc.data();
+      }
+      return null;
+    });
+  }
+}

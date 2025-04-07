@@ -1,0 +1,69 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+# Development Rules for Cursor AI - Dashly App Implementation
+
+## Core Development Principles
+
+1. *Production-Ready Mindset*: Develop every feature as if it's going into production immediately. Approach the codebase with the mentality that it will be shipped to real users, not as a prototype or demo.
+
+2. *Complete Implementation*: Every feature mentioned in the requirements must be fully implemented. No placeholder code or partial implementations.
+
+3. *Zero TODOs*: Do not leave any "TODO" comments, "Implement later" notes, or similar placeholders in the code. If a feature is in the requirements, implement it completely.
+
+4. *No Hypothetical Code*: Avoid comments like "in a real app," "in production this would," or "normally you would." Implement the actual production-ready solution instead.
+
+5. *End-to-End Feature Completion*: Each feature should be implemented from UI to business logic to data persistence. No feature should be left incomplete at any layer of the application.
+
+## Specific Implementation Guidelines
+
+6. *Error Handling*: Implement comprehensive error handling for all network requests, user inputs, and system interactions. Do not leave edge cases unhandled.
+
+7. *Loading States*: Implement proper loading states for all async operations. Users should always know when the app is working in the background.
+
+8. *Validation*: Include complete input validation for all user-entered data with appropriate error messages.
+
+9. *Persistence*: Implement proper data persistence where required - don't leave any persistence logic as placeholders.
+
+10. *Authentication*: Fully implement the authentication flow including edge cases (session expiry, network issues during authentication, etc.).
+
+11. *Navigation*: Implement complete navigation flows with proper state management. Don't leave navigation transitions or state handling incomplete.
+
+12. *API Integration*: Implement all Firebase/backend interactions completely. No mock data that "would be replaced in production."
+
+13. *Offline Support*: Implement the specified offline functionality completely rather than leaving comments about what "could be done" for offline support.
+
+14. *Localization*: Set up the full localization infrastructure for the specified languages (English, Hindi, Marathi), not just placeholders.
+
+15. *Code Organization*: Follow proper code organization patterns. No comments about "in a larger app, this would be in a separate file/module."
+
+## Quality Assurance Requirements
+
+16. *Code Commenting*: Include meaningful comments explaining "why" certain approaches were taken, not just placeholders for future work.
+
+17. *Consistent Styling*: Maintain consistent code style and UI design throughout the entire application.
+
+18. *Performance Optimization*: Implement all performance optimizations mentioned in requirements. Don't leave performance improvements as notes for future work.
+
+19. *Security Implementation*: Fully implement all security requirements including input sanitization, secure storage, and API security.
+
+20. *Image Handling*: Implement proper image loading, caching, and optimization - don't leave image handling as basic implementations with notes about improvements.
+
+## Final Delivery Standards
+
+21. *Complete Dependencies*: Include all necessary dependencies in pubspec.yaml with specific versions, not ranges or notes about "add appropriate version."
+
+22. *Configuration Files*: Provide all necessary configuration files without placeholders (Google Services configs, Firebase configs, etc.).
+
+23. *Documentation*: Provide comprehensive documentation for any complex logic or systems, not placeholders stating "this would be documented."
+
+24. *State Management*: Fully implement the state management solution for all features, not simplified versions with notes about improvements.
+
+25. *Testability*: Write code that can be tested, even if actual tests aren't included in the MVP. Don't leave notes about "making this testable later."
+
+Remember: This is a production application that will be deployed to real users in Tier 3/4 Indian cities. Every line of code must reflect that reality and provide a complete, robust user experience.

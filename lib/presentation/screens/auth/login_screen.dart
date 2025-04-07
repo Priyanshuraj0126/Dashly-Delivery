@@ -1,0 +1,243 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../core/constants/app_assets.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../presentation/blocs/auth/auth_bloc.dart';
+import '../../../config/routes/route_names.dart';
+import '../../widgets/custom_text_field.dart';
+
+/// Login screen for phone number authentication
+class LoginScreen extends StatefulWidget {
+  final bool isOtpSent;
+
+  const LoginScreen({super.key, this.isOtpSent = false});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _phoneController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // If OTP is already sent, show OTP input UI
+    if (widget.isOtpSent) {
+      // Navigate to OTP screen or show OTP input fields
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // This will be replaced with the actual navigation in your app
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP sent! Please enter the code.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  void _submitPhoneNumber() {
+    if (_formKey.currentState!.validate()) {
+      // Hide keyboard
+      FocusScope.of(context).unfocus();
+
+      // Format phone number correctly
+      String phoneNumber = _phoneController.text.trim();
+      if (!phoneNumber.startsWith('+91')) {
+        phoneNumber = '+91$phoneNumber';
+      }
+
+      // Dispatch auth event
+      context.read<AuthBloc>().add(SendOtpEvent(phoneNumber));
+    }
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your phone number';
+    }
+    if (value.startsWith('+91')) {
+      value = value.substring(3);
+    }
+    if (value.length != 10) {
+      return 'Phone number must be 10 digits';
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
+      return 'Phone number can only contain digits';
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<AuthBloc, AuthState>(
+      listener: (context, state) {
+        setState(() {
+          _isLoading = state is AuthLoadingState;
+        });
+
+        if (state is AuthOtpSentState) {
+          Navigator.pushNamed(
+            context,
+            RouteNames.otp,
+            arguments: {
+              'phoneNumber': state.phoneNumber,
+              'verificationId': state.verificationId,
+            },
+          );
+        } else if (state is AuthErrorState) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        body: SingleChildScrollView(
+          child: Container(
+            height: MediaQuery.of(context).size.height,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.primary,
+                  Color(0xFF1A237E),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 60),
+                    Image.asset(
+                      AppAssets.logoWithText,
+                      height: 120,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.delivery_dining,
+                        size: 100,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    const Text(
+                      'Delivery Partner Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Enter your phone number to continue',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 40),
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 5,
+                      child: Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              CustomTextField(
+                                controller: _phoneController,
+                                label: 'Phone Number',
+                                hint: '10-digit mobile number',
+                                prefix: Text('+91 '),
+                                keyboardType: TextInputType.phone,
+                                maxLength: 10,
+                                validator: _validatePhone,
+                              ),
+                              const SizedBox(height: 20),
+                              ElevatedButton(
+                                onPressed:
+                                    _isLoading ? null : _submitPhoneNumber,
+                                style: ElevatedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                child: _isLoading
+                                    ? const CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 3,
+                                      )
+                                    : const Text(
+                                        'Send OTP',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    const Text(
+                      'By continuing, you agree to our Terms of Service & Privacy Policy',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            // Open support contact options
+                          },
+                          child: const Text(
+                            'Need Help?',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
