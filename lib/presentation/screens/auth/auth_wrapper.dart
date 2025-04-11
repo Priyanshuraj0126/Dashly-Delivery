@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../blocs/auth/auth_bloc.dart';
 import 'login_screen.dart';
+import 'otp_verification_screen.dart';
 import '../home/home_screen.dart';
 import '../onboarding/onboarding_screen.dart';
 
@@ -31,7 +32,10 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (state is AuthOtpSentState) {
-          return const LoginScreen(isOtpSent: true);
+          return OtpVerificationScreen(
+            phoneNumber: state.phoneNumber,
+            verificationId: state.verificationId,
+          );
         }
 
         return const LoginScreen();

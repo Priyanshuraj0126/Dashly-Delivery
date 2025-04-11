@@ -1,8 +1,11 @@
 class Earnings {
   final String id;
-  final String deliveryBoyId;
+  final String deliveryPartnerId;
+  final DateTime periodStart;
+  final DateTime periodEnd;
   final double totalEarnings;
   final double baseEarnings;
+  final double surgeEarnings;
   final double tips;
   final double incentives;
   final double deductions;
@@ -11,20 +14,19 @@ class Earnings {
   final int cancelledOrders;
   final double averageOrderValue;
   final double averageDeliveryTime;
-  final double rating;
-  final Map<String, dynamic> dailyBreakdown;
-  final Map<String, dynamic> weeklyBreakdown;
-  final Map<String, dynamic> monthlyBreakdown;
-  final Map<String, dynamic> paymentHistory;
-  final Map<String, dynamic> statistics;
-  final DateTime createdAt;
+  final Map<String, dynamic>? dailyBreakdown;
+  final Map<String, dynamic>? weeklyBreakdown;
+  final Map<String, dynamic>? monthlyBreakdown;
   final DateTime updatedAt;
 
   Earnings({
     required this.id,
-    required this.deliveryBoyId,
+    required this.deliveryPartnerId,
+    required this.periodStart,
+    required this.periodEnd,
     required this.totalEarnings,
     required this.baseEarnings,
+    required this.surgeEarnings,
     required this.tips,
     required this.incentives,
     required this.deductions,
@@ -33,47 +35,45 @@ class Earnings {
     required this.cancelledOrders,
     required this.averageOrderValue,
     required this.averageDeliveryTime,
-    required this.rating,
-    required this.dailyBreakdown,
-    required this.weeklyBreakdown,
-    required this.monthlyBreakdown,
-    required this.paymentHistory,
-    required this.statistics,
-    required this.createdAt,
+    this.dailyBreakdown,
+    this.weeklyBreakdown,
+    this.monthlyBreakdown,
     required this.updatedAt,
   });
 
-  factory Earnings.fromJson(Map<String, dynamic> json) {
+  factory Earnings.fromMap(Map<String, dynamic> map, String id) {
     return Earnings(
-      id: json['id'] as String,
-      deliveryBoyId: json['deliveryBoyId'] as String,
-      totalEarnings: (json['totalEarnings'] as num).toDouble(),
-      baseEarnings: (json['baseEarnings'] as num).toDouble(),
-      tips: (json['tips'] as num).toDouble(),
-      incentives: (json['incentives'] as num).toDouble(),
-      deductions: (json['deductions'] as num).toDouble(),
-      totalOrders: json['totalOrders'] as int,
-      completedOrders: json['completedOrders'] as int,
-      cancelledOrders: json['cancelledOrders'] as int,
-      averageOrderValue: (json['averageOrderValue'] as num).toDouble(),
-      averageDeliveryTime: (json['averageDeliveryTime'] as num).toDouble(),
-      rating: (json['rating'] as num).toDouble(),
-      dailyBreakdown: json['dailyBreakdown'] as Map<String, dynamic>,
-      weeklyBreakdown: json['weeklyBreakdown'] as Map<String, dynamic>,
-      monthlyBreakdown: json['monthlyBreakdown'] as Map<String, dynamic>,
-      paymentHistory: json['paymentHistory'] as Map<String, dynamic>,
-      statistics: json['statistics'] as Map<String, dynamic>,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      id: id,
+      deliveryPartnerId: map['deliveryPartnerId'] as String,
+      periodStart:
+          DateTime.fromMillisecondsSinceEpoch(map['periodStart'] as int),
+      periodEnd: DateTime.fromMillisecondsSinceEpoch(map['periodEnd'] as int),
+      totalEarnings: (map['totalEarnings'] as num).toDouble(),
+      baseEarnings: (map['baseEarnings'] as num).toDouble(),
+      surgeEarnings: (map['surgeEarnings'] as num).toDouble(),
+      tips: (map['tips'] as num).toDouble(),
+      incentives: (map['incentives'] as num).toDouble(),
+      deductions: (map['deductions'] as num).toDouble(),
+      totalOrders: map['totalOrders'] as int,
+      completedOrders: map['completedOrders'] as int,
+      cancelledOrders: map['cancelledOrders'] as int,
+      averageOrderValue: (map['averageOrderValue'] as num).toDouble(),
+      averageDeliveryTime: (map['averageDeliveryTime'] as num).toDouble(),
+      dailyBreakdown: map['dailyBreakdown'] as Map<String, dynamic>?,
+      weeklyBreakdown: map['weeklyBreakdown'] as Map<String, dynamic>?,
+      monthlyBreakdown: map['monthlyBreakdown'] as Map<String, dynamic>?,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int),
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
-      'id': id,
-      'deliveryBoyId': deliveryBoyId,
+      'deliveryPartnerId': deliveryPartnerId,
+      'periodStart': periodStart.millisecondsSinceEpoch,
+      'periodEnd': periodEnd.millisecondsSinceEpoch,
       'totalEarnings': totalEarnings,
       'baseEarnings': baseEarnings,
+      'surgeEarnings': surgeEarnings,
       'tips': tips,
       'incentives': incentives,
       'deductions': deductions,
@@ -82,61 +82,11 @@ class Earnings {
       'cancelledOrders': cancelledOrders,
       'averageOrderValue': averageOrderValue,
       'averageDeliveryTime': averageDeliveryTime,
-      'rating': rating,
       'dailyBreakdown': dailyBreakdown,
       'weeklyBreakdown': weeklyBreakdown,
       'monthlyBreakdown': monthlyBreakdown,
-      'paymentHistory': paymentHistory,
-      'statistics': statistics,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
+      'updatedAt': updatedAt.millisecondsSinceEpoch,
     };
-  }
-
-  Earnings copyWith({
-    String? id,
-    String? deliveryBoyId,
-    double? totalEarnings,
-    double? baseEarnings,
-    double? tips,
-    double? incentives,
-    double? deductions,
-    int? totalOrders,
-    int? completedOrders,
-    int? cancelledOrders,
-    double? averageOrderValue,
-    double? averageDeliveryTime,
-    double? rating,
-    Map<String, dynamic>? dailyBreakdown,
-    Map<String, dynamic>? weeklyBreakdown,
-    Map<String, dynamic>? monthlyBreakdown,
-    Map<String, dynamic>? paymentHistory,
-    Map<String, dynamic>? statistics,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    return Earnings(
-      id: id ?? this.id,
-      deliveryBoyId: deliveryBoyId ?? this.deliveryBoyId,
-      totalEarnings: totalEarnings ?? this.totalEarnings,
-      baseEarnings: baseEarnings ?? this.baseEarnings,
-      tips: tips ?? this.tips,
-      incentives: incentives ?? this.incentives,
-      deductions: deductions ?? this.deductions,
-      totalOrders: totalOrders ?? this.totalOrders,
-      completedOrders: completedOrders ?? this.completedOrders,
-      cancelledOrders: cancelledOrders ?? this.cancelledOrders,
-      averageOrderValue: averageOrderValue ?? this.averageOrderValue,
-      averageDeliveryTime: averageDeliveryTime ?? this.averageDeliveryTime,
-      rating: rating ?? this.rating,
-      dailyBreakdown: dailyBreakdown ?? this.dailyBreakdown,
-      weeklyBreakdown: weeklyBreakdown ?? this.weeklyBreakdown,
-      monthlyBreakdown: monthlyBreakdown ?? this.monthlyBreakdown,
-      paymentHistory: paymentHistory ?? this.paymentHistory,
-      statistics: statistics ?? this.statistics,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
   }
 
   /// Calculate completion rate
@@ -164,7 +114,7 @@ class Earnings {
 
   /// Calculate earnings per hour
   double getEarningsPerHour() {
-    final hours = updatedAt.difference(createdAt).inHours;
+    final hours = updatedAt.difference(periodStart).inHours;
     if (hours == 0) return 0.0;
     return totalEarnings / hours;
   }
@@ -173,18 +123,18 @@ class Earnings {
   Map<String, dynamic>? getDailyEarnings(DateTime date) {
     final dateKey =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    return dailyBreakdown[dateKey];
+    return dailyBreakdown?[dateKey];
   }
 
   /// Get earnings breakdown for a specific week
   Map<String, dynamic>? getWeeklyEarnings(DateTime date) {
     final weekKey = '${date.year}-W${(date.day / 7).ceil()}';
-    return weeklyBreakdown[weekKey];
+    return weeklyBreakdown?[weekKey];
   }
 
   /// Get earnings breakdown for a specific month
   Map<String, dynamic>? getMonthlyEarnings(DateTime date) {
     final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
-    return monthlyBreakdown[monthKey];
+    return monthlyBreakdown?[monthKey];
   }
 }

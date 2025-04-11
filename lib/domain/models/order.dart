@@ -1,206 +1,138 @@
+import 'address.dart';
+
 class Order {
   final String id;
-  final String customerId;
-  final String? deliveryPartnerId;
-  final String restaurantId;
-  final String restaurantName;
-  final String restaurantAddress;
-  final String customerName;
-  final String customerPhoneNumber;
-  final String customerAddress;
+  final String userId;
+  final String storeId;
+  final String? deliveryBoyId;
   final List<OrderItem> items;
-  final double subtotal;
-  final double tax;
-  final double deliveryFee;
   final double total;
+  final double deliveryCharges;
+  final Address deliveryAddress;
+  final String deliveryTimeWindow;
   final String paymentMethod;
-  final bool isPaid;
-  final String status;
-  final String? cancellationReason;
+  final String paymentStatus;
+  final String orderStatus;
   final DateTime createdAt;
-  final DateTime? acceptedAt;
-  final DateTime? pickedUpAt;
-  final DateTime? deliveredAt;
-  final DateTime? cancelledAt;
-  final Map<String, dynamic>? deliveryPartnerLocation;
-  final Map<String, dynamic>? restaurantLocation;
-  final Map<String, dynamic>? customerLocation;
-  final String? assignedZoneId;
-  final double? rating;
-  final String? feedback;
+  final DateTime updatedAt;
+  final DateTime? completedAt;
+  final double? distance;
+  final Map<String, dynamic>? deliveryBoyLocation;
 
   Order({
     required this.id,
-    required this.customerId,
-    this.deliveryPartnerId,
-    required this.restaurantId,
-    required this.restaurantName,
-    required this.restaurantAddress,
-    required this.customerName,
-    required this.customerPhoneNumber,
-    required this.customerAddress,
+    required this.userId,
+    required this.storeId,
+    this.deliveryBoyId,
     required this.items,
-    required this.subtotal,
-    required this.tax,
-    required this.deliveryFee,
     required this.total,
+    required this.deliveryCharges,
+    required this.deliveryAddress,
+    required this.deliveryTimeWindow,
     required this.paymentMethod,
-    required this.isPaid,
-    required this.status,
-    this.cancellationReason,
+    required this.paymentStatus,
+    required this.orderStatus,
     required this.createdAt,
-    this.acceptedAt,
-    this.pickedUpAt,
-    this.deliveredAt,
-    this.cancelledAt,
-    this.deliveryPartnerLocation,
-    this.restaurantLocation,
-    this.customerLocation,
-    this.assignedZoneId,
-    this.rating,
-    this.feedback,
+    required this.updatedAt,
+    this.completedAt,
+    this.distance,
+    this.deliveryBoyLocation,
   });
 
-  factory Order.fromMap(Map<String, dynamic> map, String id) {
-    return Order(
-      id: id,
-      customerId: map['customerId'] ?? '',
-      deliveryPartnerId: map['deliveryPartnerId'],
-      restaurantId: map['restaurantId'] ?? '',
-      restaurantName: map['restaurantName'] ?? '',
-      restaurantAddress: map['restaurantAddress'] ?? '',
-      customerName: map['customerName'] ?? '',
-      customerPhoneNumber: map['customerPhoneNumber'] ?? '',
-      customerAddress: map['customerAddress'] ?? '',
-      items: (map['items'] as List<dynamic>?)
-              ?.map((item) => OrderItem.fromMap(item))
-              .toList() ??
-          [],
-      subtotal: (map['subtotal'] ?? 0.0).toDouble(),
-      tax: (map['tax'] ?? 0.0).toDouble(),
-      deliveryFee: (map['deliveryFee'] ?? 0.0).toDouble(),
-      total: (map['total'] ?? 0.0).toDouble(),
-      paymentMethod: map['paymentMethod'] ?? '',
-      isPaid: map['isPaid'] ?? false,
-      status: map['status'] ?? '',
-      cancellationReason: map['cancellationReason'],
-      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt'] ?? 0),
-      acceptedAt: map['acceptedAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['acceptedAt'])
-          : null,
-      pickedUpAt: map['pickedUpAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['pickedUpAt'])
-          : null,
-      deliveredAt: map['deliveredAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['deliveredAt'])
-          : null,
-      cancelledAt: map['cancelledAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['cancelledAt'])
-          : null,
-      deliveryPartnerLocation: map['deliveryPartnerLocation'],
-      restaurantLocation: map['restaurantLocation'],
-      customerLocation: map['customerLocation'],
-      assignedZoneId: map['assignedZoneId'],
-      rating: (map['rating'] ?? 0.0).toDouble(),
-      feedback: map['feedback'],
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'customerId': customerId,
-      'deliveryPartnerId': deliveryPartnerId,
-      'restaurantId': restaurantId,
-      'restaurantName': restaurantName,
-      'restaurantAddress': restaurantAddress,
-      'customerName': customerName,
-      'customerPhoneNumber': customerPhoneNumber,
-      'customerAddress': customerAddress,
-      'items': items.map((item) => item.toMap()).toList(),
-      'subtotal': subtotal,
-      'tax': tax,
-      'deliveryFee': deliveryFee,
-      'total': total,
-      'paymentMethod': paymentMethod,
-      'isPaid': isPaid,
-      'status': status,
-      'cancellationReason': cancellationReason,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'acceptedAt': acceptedAt?.millisecondsSinceEpoch,
-      'pickedUpAt': pickedUpAt?.millisecondsSinceEpoch,
-      'deliveredAt': deliveredAt?.millisecondsSinceEpoch,
-      'cancelledAt': cancelledAt?.millisecondsSinceEpoch,
-      'deliveryPartnerLocation': deliveryPartnerLocation,
-      'restaurantLocation': restaurantLocation,
-      'customerLocation': customerLocation,
-      'assignedZoneId': assignedZoneId,
-      'rating': rating,
-      'feedback': feedback,
-    };
-  }
-
+  // Create a copy of this order with updated fields
   Order copyWith({
     String? id,
-    String? customerId,
-    String? deliveryPartnerId,
-    String? restaurantId,
-    String? restaurantName,
-    String? restaurantAddress,
-    String? customerName,
-    String? customerPhoneNumber,
-    String? customerAddress,
+    String? userId,
+    String? storeId,
+    String? deliveryBoyId,
     List<OrderItem>? items,
-    double? subtotal,
-    double? tax,
-    double? deliveryFee,
     double? total,
+    double? deliveryCharges,
+    Address? deliveryAddress,
+    String? deliveryTimeWindow,
     String? paymentMethod,
-    bool? isPaid,
-    String? status,
-    String? cancellationReason,
+    String? paymentStatus,
+    String? orderStatus,
     DateTime? createdAt,
-    DateTime? acceptedAt,
-    DateTime? pickedUpAt,
-    DateTime? deliveredAt,
-    DateTime? cancelledAt,
-    Map<String, dynamic>? deliveryPartnerLocation,
-    Map<String, dynamic>? restaurantLocation,
-    Map<String, dynamic>? customerLocation,
-    String? assignedZoneId,
-    double? rating,
-    String? feedback,
+    DateTime? updatedAt,
+    DateTime? completedAt,
+    double? distance,
+    Map<String, dynamic>? deliveryBoyLocation,
   }) {
     return Order(
       id: id ?? this.id,
-      customerId: customerId ?? this.customerId,
-      deliveryPartnerId: deliveryPartnerId ?? this.deliveryPartnerId,
-      restaurantId: restaurantId ?? this.restaurantId,
-      restaurantName: restaurantName ?? this.restaurantName,
-      restaurantAddress: restaurantAddress ?? this.restaurantAddress,
-      customerName: customerName ?? this.customerName,
-      customerPhoneNumber: customerPhoneNumber ?? this.customerPhoneNumber,
-      customerAddress: customerAddress ?? this.customerAddress,
+      userId: userId ?? this.userId,
+      storeId: storeId ?? this.storeId,
+      deliveryBoyId: deliveryBoyId ?? this.deliveryBoyId,
       items: items ?? this.items,
-      subtotal: subtotal ?? this.subtotal,
-      tax: tax ?? this.tax,
-      deliveryFee: deliveryFee ?? this.deliveryFee,
       total: total ?? this.total,
+      deliveryCharges: deliveryCharges ?? this.deliveryCharges,
+      deliveryAddress: deliveryAddress ?? this.deliveryAddress,
+      deliveryTimeWindow: deliveryTimeWindow ?? this.deliveryTimeWindow,
       paymentMethod: paymentMethod ?? this.paymentMethod,
-      isPaid: isPaid ?? this.isPaid,
-      status: status ?? this.status,
-      cancellationReason: cancellationReason ?? this.cancellationReason,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      orderStatus: orderStatus ?? this.orderStatus,
       createdAt: createdAt ?? this.createdAt,
-      acceptedAt: acceptedAt ?? this.acceptedAt,
-      pickedUpAt: pickedUpAt ?? this.pickedUpAt,
-      deliveredAt: deliveredAt ?? this.deliveredAt,
-      cancelledAt: cancelledAt ?? this.cancelledAt,
-      deliveryPartnerLocation:
-          deliveryPartnerLocation ?? this.deliveryPartnerLocation,
-      restaurantLocation: restaurantLocation ?? this.restaurantLocation,
-      customerLocation: customerLocation ?? this.customerLocation,
-      assignedZoneId: assignedZoneId ?? this.assignedZoneId,
-      rating: rating ?? this.rating,
-      feedback: feedback ?? this.feedback,
+      updatedAt: updatedAt ?? this.updatedAt,
+      completedAt: completedAt ?? this.completedAt,
+      distance: distance ?? this.distance,
+      deliveryBoyLocation: deliveryBoyLocation ?? this.deliveryBoyLocation,
+    );
+  }
+
+  // Convert Order object to Map
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'userId': userId,
+      'storeId': storeId,
+      'deliveryBoyId': deliveryBoyId,
+      'items': items.map((item) => item.toMap()).toList(),
+      'total': total,
+      'deliveryCharges': deliveryCharges,
+      'deliveryAddress': deliveryAddress.toMap(),
+      'deliveryTimeWindow': deliveryTimeWindow,
+      'paymentMethod': paymentMethod,
+      'paymentStatus': paymentStatus,
+      'orderStatus': orderStatus,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt.millisecondsSinceEpoch,
+      'completedAt': completedAt?.millisecondsSinceEpoch,
+      'distance': distance,
+      'deliveryBoyLocation': deliveryBoyLocation,
+    };
+  }
+
+  // Create Order object from Map
+  factory Order.fromMap(Map<String, dynamic> map) {
+    return Order(
+      id: map['id'] ?? '',
+      userId: map['userId'] ?? '',
+      storeId: map['storeId'] ?? '',
+      deliveryBoyId: map['deliveryBoyId'],
+      items: List<OrderItem>.from(
+        (map['items'] ?? []).map(
+          (item) => OrderItem.fromMap(item),
+        ),
+      ),
+      total: (map['total'] ?? 0.0).toDouble(),
+      deliveryCharges: (map['deliveryCharges'] ?? 0.0).toDouble(),
+      deliveryAddress: Address.fromMap(map['deliveryAddress'] ?? {}),
+      deliveryTimeWindow: map['deliveryTimeWindow'] ?? '',
+      paymentMethod: map['paymentMethod'] ?? '',
+      paymentStatus: map['paymentStatus'] ?? 'PENDING',
+      orderStatus: map['orderStatus'] ?? 'PLACED',
+      createdAt: map['createdAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
+          : DateTime.now(),
+      updatedAt: map['updatedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'])
+          : DateTime.now(),
+      completedAt: map['completedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['completedAt'])
+          : null,
+      distance: map['distance']?.toDouble(),
+      deliveryBoyLocation: map['deliveryBoyLocation'],
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 class CustomListTile extends StatelessWidget {
   final Widget? leading;
@@ -53,7 +54,8 @@ class CustomListTile extends StatelessWidget {
           margin: margin,
           decoration: BoxDecoration(
             color: selected
-                ? (selectedColor ?? AppColors.primary.withOpacity(0.1))
+                ? (selectedColor ??
+                    ColorUtils.withAlpha(AppColors.primary, 0.1))
                 : (backgroundColor ?? Colors.transparent),
             borderRadius: BorderRadius.circular(borderRadius),
           ),

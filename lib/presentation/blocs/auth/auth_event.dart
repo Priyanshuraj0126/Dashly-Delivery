@@ -1,10 +1,5 @@
 part of 'auth_bloc.dart';
 
-/// Base class for all authentication events
-abstract class AuthEvent {
-  const AuthEvent();
-}
-
 /// Event to check authentication status
 class CheckAuthStatusEvent extends AuthEvent {
   const CheckAuthStatusEvent();
@@ -51,13 +46,6 @@ class UploadDocumentEvent extends AuthEvent {
   });
 }
 
-/// Event to complete onboarding
-class CompleteOnboardingEvent extends AuthEvent {
-  final Map<String, dynamic> onboardingData;
-
-  const CompleteOnboardingEvent(this.onboardingData);
-}
-
 class UpdateUserDetailsEvent extends AuthEvent {
   final String name;
   final String email;
@@ -82,4 +70,15 @@ class AuthStateChangedEvent extends AuthEvent {
 
   @override
   List<Object?> get props => [user];
+}
+
+class TestLoginEvent extends AuthEvent {
+  final String testPhoneNumber;
+
+  const TestLoginEvent({
+    required this.testPhoneNumber,
+  });
+
+  @override
+  List<Object?> get props => [testPhoneNumber];
 }

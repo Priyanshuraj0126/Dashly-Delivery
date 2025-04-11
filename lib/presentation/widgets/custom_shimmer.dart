@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 class CustomShimmer extends StatelessWidget {
   final Widget child;
@@ -30,7 +31,8 @@ class CustomShimmer extends StatelessWidget {
 
     return Shimmer.fromColors(
       baseColor: baseColor ?? AppColors.surface,
-      highlightColor: highlightColor ?? AppColors.surface.withOpacity(0.5),
+      highlightColor:
+          highlightColor ?? ColorUtils.withAlpha(AppColors.surface, 0.5),
       period: duration,
       child: loadingWidget ?? child,
     );

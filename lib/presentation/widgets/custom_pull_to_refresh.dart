@@ -70,11 +70,19 @@ class CustomPullToRefresh extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget content = child;
+
     if (padding != null) {
-      content = Padding(padding: padding!, child: content);
+      content = Padding(
+        padding: padding!,
+        child: content,
+      );
     }
+
     if (margin != null) {
-      content = Padding(margin: margin!, child: content);
+      content = Container(
+        margin: margin!,
+        child: content,
+      );
     }
 
     if (!enableScroll) {
@@ -82,16 +90,22 @@ class CustomPullToRefresh extends StatelessWidget {
     }
 
     if (showScrollbar) {
-      content = Scrollbar(
-        child: content,
-        thickness: scrollbarThickness,
-        radius: Radius.circular(scrollbarTrackBorderRadius),
-        thumbColor: scrollbarColor ?? AppColors.primary.withOpacity(0.5),
-        trackColor: scrollbarTrackColor ?? AppColors.surface,
-        trackBorderColor: scrollbarTrackBorderColor ?? AppColors.border,
-        trackBorderWidth: scrollbarTrackBorderWidth,
-        trackVisibility: true,
-        child: content,
+      content = ScrollbarTheme(
+        data: ScrollbarThemeData(
+          thickness: WidgetStateProperty.all(scrollbarThickness),
+          thumbColor: WidgetStateProperty.all(
+            scrollbarColor ?? AppColors.primary.withOpacity(0.5),
+          ),
+          trackColor: WidgetStateProperty.all(
+            scrollbarTrackColor ?? AppColors.surface,
+          ),
+          radius: Radius.circular(scrollbarTrackBorderRadius),
+        ),
+        child: Scrollbar(
+          thickness: scrollbarThickness,
+          radius: Radius.circular(scrollbarTrackBorderRadius),
+          child: content,
+        ),
       );
     }
 

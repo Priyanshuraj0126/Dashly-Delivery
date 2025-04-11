@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../presentation/blocs/auth/auth_bloc.dart';
-import '../../../config/routes/route_names.dart';
 import '../../widgets/custom_text_field.dart';
+import 'otp_verification_screen.dart';
 
 /// Login screen for phone number authentication
 class LoginScreen extends StatefulWidget {
@@ -19,26 +20,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>(debugLabel: 'login_form');
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-
-    // If OTP is already sent, show OTP input UI
-    if (widget.isOtpSent) {
-      // Navigate to OTP screen or show OTP input fields
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // This will be replaced with the actual navigation in your app
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP sent! Please enter the code.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      });
-    }
   }
 
   @override
@@ -88,13 +75,14 @@ class _LoginScreenState extends State<LoginScreen> {
         });
 
         if (state is AuthOtpSentState) {
-          Navigator.pushNamed(
+          Navigator.pushReplacement(
             context,
-            RouteNames.otp,
-            arguments: {
-              'phoneNumber': state.phoneNumber,
-              'verificationId': state.verificationId,
-            },
+            MaterialPageRoute(
+              builder: (_) => OtpVerificationScreen(
+                phoneNumber: state.phoneNumber,
+                verificationId: state.verificationId,
+              ),
+            ),
           );
         } else if (state is AuthErrorState) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -203,6 +191,31 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    if (kDebugMode) ...[
+                      ElevatedButton(
+                        onPressed: () {
+                          context.read<AuthBloc>().add(
+                                const TestLoginEvent(
+                                  testPhoneNumber: '+911234567890',
+                                ),
+                              );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text(
+                          'Test Login (Debug Only)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 20),
+                    ],
                     const Spacer(),
                     const Text(
                       'By continuing, you agree to our Terms of Service & Privacy Policy',

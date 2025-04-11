@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../data/models/delivery_boy.dart';
-import '../../../data/models/order.dart';
-import '../../../data/models/store.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../data/models/order.dart' as order_model;
+import '../../../data/models/store.dart' as store_model;
 import '../../../data/models/user.dart' as app_user;
 import '../../../domain/repositories/delivery_repository.dart';
 import '../../../domain/repositories/order_repository.dart';
@@ -224,7 +224,7 @@ class OrderErrorState extends OrderState {
 }
 
 class ActiveOrdersLoadedState extends OrderState {
-  final List<Order> orders;
+  final List<order_model.Order> orders;
 
   const ActiveOrdersLoadedState(this.orders);
 
@@ -233,7 +233,7 @@ class ActiveOrdersLoadedState extends OrderState {
 }
 
 class OrderHistoryLoadedState extends OrderState {
-  final List<Order> orders;
+  final List<order_model.Order> orders;
   final DateTime? startDate;
   final DateTime? endDate;
 
@@ -248,10 +248,10 @@ class OrderHistoryLoadedState extends OrderState {
 }
 
 class OrderDetailsLoadedState extends OrderState {
-  final Order order;
-  final Store? store;
-  final User? customer;
-  final List<OrderItem> items;
+  final order_model.Order order;
+  final store_model.Store? store;
+  final app_user.User? customer;
+  final List<order_model.OrderItem> items;
 
   const OrderDetailsLoadedState({
     required this.order,
@@ -322,7 +322,7 @@ class EstimatedTimeUpdatedState extends OrderState {
 }
 
 class NewOrdersStreamState extends OrderState {
-  final List<Order> orders;
+  final List<order_model.Order> orders;
 
   const NewOrdersStreamState(this.orders);
 
@@ -331,7 +331,7 @@ class NewOrdersStreamState extends OrderState {
 }
 
 class OrderUpdatedStreamState extends OrderState {
-  final Order order;
+  final order_model.Order order;
 
   const OrderUpdatedStreamState(this.order);
 
@@ -343,8 +343,9 @@ class OrderUpdatedStreamState extends OrderState {
 class OrderBloc extends Bloc<OrderEvent, OrderState> {
   final OrderRepository orderRepository;
   final DeliveryRepository deliveryRepository;
-  StreamSubscription<List<Order>>? _newOrdersSubscription;
-  final Map<String, StreamSubscription<Order>> _orderUpdatesSubscriptions = {};
+  StreamSubscription<List<order_model.Order>>? _newOrdersSubscription;
+  final Map<String, StreamSubscription<order_model.Order>>
+      _orderUpdatesSubscriptions = {};
 
   OrderBloc({
     required this.orderRepository,
@@ -447,33 +448,13 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     AcceptOrderEvent event,
     Emitter<OrderState> emit,
   ) async {
-    emit(OrderLoadingState());
     try {
-      final result = await orderRepository.acceptOrder(event.orderId);
-
-      if (result) {
-        final order = await orderRepository.getOrderById(event.orderId);
-
-        if (order != null) {
-          // Update delivery boy status
-          await deliveryRepository.updateDeliveryBoyStatus(
-            'on_delivery',
-          );
-
-          // Start listening for this specific order's updates
-          add(ListenForSpecificOrderEvent(event.orderId));
-
-          emit(OrderStatusUpdatedState(
-            orderId: event.orderId,
-            status: order.status,
-          ));
-        } else {
-          emit(const OrderErrorState(
-              'Failed to get order details after accepting'));
-        }
-      } else {
-        emit(const OrderErrorState('Failed to accept order'));
-      }
+      emit(OrderLoadingState());
+      await orderRepository.acceptOrder(event.orderId);
+      emit(OrderStatusUpdatedState(
+        orderId: event.orderId,
+        status: AppConstants.orderStatusAssigned,
+      ));
     } catch (e) {
       emit(OrderErrorState(e.toString()));
     }
@@ -483,19 +464,13 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     RejectOrderEvent event,
     Emitter<OrderState> emit,
   ) async {
-    emit(OrderLoadingState());
     try {
-      final result = await orderRepository.rejectOrder(
-        event.orderId,
-        event.reason,
-      );
-
-      if (result) {
-        // Refresh the active orders list
-        add(FetchActiveOrdersEvent());
-      } else {
-        emit(const OrderErrorState('Failed to reject order'));
-      }
+      emit(OrderLoadingState());
+      await orderRepository.rejectOrder(event.orderId, event.reason);
+      emit(OrderStatusUpdatedState(
+        orderId: event.orderId,
+        status: 'rejected',
+      ));
     } catch (e) {
       emit(OrderErrorState(e.toString()));
     }
@@ -669,7 +644,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
         ));
 
         // Complete the order
-        add(CompleteOrderEvent(event.orderId));
+        add(CompleteOrderEvent(orderId: event.orderId));
       } else {
         emit(const OrderErrorState('Failed to confirm cash collection'));
       }
@@ -690,7 +665,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
         emit(OnlinePaymentVerifiedState(event.orderId));
 
         // Complete the order
-        add(CompleteOrderEvent(event.orderId));
+        add(CompleteOrderEvent(orderId: event.orderId));
       } else {
         emit(const OrderErrorState('Failed to verify online payment'));
       }
@@ -713,7 +688,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
 
       if (result) {
         // Refresh the order details
-        add(FetchOrderDetailsEvent(event.orderId));
+        add(FetchOrderDetailsEvent(orderId: event.orderId));
       } else {
         emit(const OrderErrorState('Failed to report order issue'));
       }

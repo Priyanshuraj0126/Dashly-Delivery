@@ -1,9 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../../data/models/delivery_boy.dart';
 import '../../data/models/zone.dart';
-import '../../data/models/order.dart';
-import '../../data/models/store.dart';
+import '../../data/models/order.dart' as order_model;
+import '../../data/models/store.dart' as store_model;
 
 /// Interface for delivery-related operations
 abstract class DeliveryRepository {
@@ -19,79 +18,65 @@ abstract class DeliveryRepository {
   /// Get assigned zone
   Future<Zone?> getAssignedZone();
 
-  /// Update delivery boy location
-  Future<void> updateLocation(GeoPoint location);
-
-  /// Check if location is within assigned zone
-  Future<bool> isLocationWithinZone(GeoPoint location, String zoneId);
-
-  /// Get active orders for current delivery boy
-  Future<List<Order>> getActiveOrders();
+  /// Get active orders for the delivery boy
+  Future<List<order_model.Order>> getActiveOrders();
 
   /// Get order by id
-  Future<Order?> getOrderById(String orderId);
+  Future<order_model.Order?> getOrderById(String orderId);
 
-  /// Get order history for current delivery boy
-  Future<List<Order>> getOrderHistory({
+  /// Get order history for the delivery boy
+  Future<List<order_model.Order>> getOrderHistory({
     DateTime? startDate,
     DateTime? endDate,
-    int limit = 50,
     String? status,
+    int limit = 20,
   });
 
-  /// Accept order
+  /// Accept an order
   Future<bool> acceptOrder(String orderId);
 
-  /// Reject order
+  /// Reject an order
   Future<bool> rejectOrder(String orderId, String reason);
 
-  /// Update order status
-  Future<bool> updateOrderStatus(String orderId, String status);
+  /// Start order pickup
+  Future<bool> startOrderPickup(String orderId);
 
-  /// Complete order
-  Future<bool> completeOrder(
-    String orderId, {
-    String? photoUrl,
-    String? deliveryNotes,
-    bool handedOverDirectly = true,
-  });
+  /// Complete order pickup
+  Future<bool> completeOrderPickup(String orderId);
 
-  /// Confirm cash collection
-  Future<bool> confirmCashCollection(String orderId, double amount);
+  /// Start order delivery
+  Future<bool> startOrderDelivery(String orderId);
 
-  /// Verify online payment
-  Future<bool> verifyOnlinePayment(String orderId);
+  /// Complete order delivery
+  Future<bool> completeOrderDelivery(String orderId);
 
-  /// Get daily statistics
-  Future<Map<String, dynamic>> getDailyStatistics({DateTime? date});
+  /// Update delivery boy location
+  Future<bool> updateLocation(GeoPoint location);
 
-  /// Get weekly statistics
-  Future<Map<String, dynamic>> getWeeklyStatistics({DateTime? weekStart});
-
-  /// Get monthly statistics
-  Future<Map<String, dynamic>> getMonthlyStatistics({DateTime? monthStart});
+  /// Check if location is within a specified zone
+  Future<bool> isLocationWithinZone(GeoPoint location, String zoneId);
 
   /// Get store details
-  Future<Store?> getStoreDetails(String storeId);
-
-  /// Get delivery boy by id
-  Future<DeliveryBoy?> getDeliveryBoyById(String id);
+  Future<store_model.Store?> getStoreDetails(String storeId);
 
   /// Get nearby stores
-  Future<List<Store>> getNearbyStores({double radiusInKm = 5.0});
+  Future<List<store_model.Store>> getNearbyStores({double radiusInKm = 5.0});
 
-  /// Start listening for new orders
-  Stream<List<Order>> listenForNewOrders();
+  /// Listen for new orders
+  Stream<List<order_model.Order>> listenForNewOrders();
 
-  /// Start listening for order updates
-  Stream<Order> listenForOrderUpdates(String orderId);
+  /// Listen for order updates
+  Stream<order_model.Order> listenForOrderUpdates(String orderId);
 
-  /// Start listening for location updates
-  Stream<GeoPoint> listenForLocationUpdates();
+  /// Get earnings for a specific date range
+  Future<Map<String, dynamic>> getEarnings({
+    DateTime? startDate,
+    DateTime? endDate,
+  });
 
-  /// Generate earnings report for a period
-  Future<Map<String, dynamic>> generateEarningsReport({
-    required DateTime startDate,
-    required DateTime endDate,
+  /// Get earnings summary
+  Future<Map<String, dynamic>> getEarningsSummary({
+    DateTime? startDate,
+    DateTime? endDate,
   });
 }

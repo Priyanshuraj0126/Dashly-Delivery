@@ -1,25 +1,38 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/services/firebase/firebase_service.dart';
+import '../../core/services/firebase/firebase_messaging_service.dart';
 import '../../domain/repositories/order_repository.dart';
 import '../models/delivery_boy.dart';
-import '../models/order.dart';
-import '../models/store.dart';
+import '../models/order.dart' as order_model;
+import '../models/store.dart' as store_model;
 import '../models/user.dart' as app_user;
 
 /// Implementation of the OrderRepository interface
 class OrderRepositoryImpl implements OrderRepository {
   final FirebaseService _firebaseService;
+  late dynamic _messagingService;
+  final FirebaseFunctions _functions;
 
   /// Constructor
   OrderRepositoryImpl({
     required FirebaseService firebaseService,
-  }) : _firebaseService = firebaseService;
+    required dynamic messagingService,
+  })  : _firebaseService = firebaseService,
+        _messagingService = messagingService,
+        _functions = FirebaseFunctions.instance;
+
+  /// Update the messaging service reference
+  void updateMessagingService(FirebaseMessagingService messagingService) {
+    _messagingService = messagingService;
+  }
 
   @override
-  Future<Order?> getOrderById(String orderId) async {
+  Future<order_model.Order?> getOrderById(String orderId) async {
     try {
       final doc = await _firebaseService.getDocument(
         AppConstants.ordersCollection,
@@ -27,7 +40,7 @@ class OrderRepositoryImpl implements OrderRepository {
       );
 
       if (doc.exists) {
-        return Order.fromFirestore(doc);
+        return order_model.Order.fromFirestore(doc);
       } else {
         return null;
       }
@@ -37,7 +50,7 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
-  Future<List<Order>> getActiveOrders() async {
+  Future<List<order_model.Order>> getActiveOrders() async {
     try {
       final userId = await _getUserId();
       if (userId == null) return [];
@@ -45,11 +58,11 @@ class OrderRepositoryImpl implements OrderRepository {
       final snapshot = await _firebaseService.getDocumentsWithQuery(
         AppConstants.ordersCollection,
         field: 'delivery_boy_id',
-        isEqualTo: userId,
+        value: userId,
       );
 
       return snapshot.docs
-          .map((doc) => Order.fromFirestore(doc))
+          .map((doc) => order_model.Order.fromFirestore(doc))
           .where((order) => !order.isCompleted())
           .toList();
     } catch (e) {
@@ -58,7 +71,7 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
-  Future<List<Order>> getOrderHistory({
+  Future<List<order_model.Order>> getOrderHistory({
     DateTime? startDate,
     DateTime? endDate,
     int limit = 50,
@@ -95,7 +108,9 @@ class OrderRepositoryImpl implements OrderRepository {
           .limit(limit)
           .get();
 
-      return snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList();
+      return snapshot.docs
+          .map((doc) => order_model.Order.fromFirestore(doc))
+          .toList();
     } catch (e) {
       return [];
     }
@@ -107,19 +122,91 @@ class OrderRepositoryImpl implements OrderRepository {
       final userId = await _getUserId();
       if (userId == null) return false;
 
+      // Get order document
+      final orderDoc = await _firebaseService.getDocument(
+        AppConstants.ordersCollection,
+        orderId,
+      );
+
+      if (!orderDoc.exists) return false;
+
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      if (orderData['orderStatus'] != 'WAITING_FOR_DRIVER') return false;
+
+      // Update order with delivery boy assignment
       await _firebaseService.updateDocument(
         AppConstants.ordersCollection,
         orderId,
         {
-          'delivery_boy_id': userId,
-          'status': AppConstants.orderStatusAssigned,
-          'status_updated_at': FieldValue.serverTimestamp(),
+          'deliveryBoyId': userId,
+          'orderStatus': AppConstants.orderStatusAssigned,
+          'assignedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         },
       );
 
+      // Notify customer and store about order assignment
+      await _notifyOrderAssignment(orderId, orderData);
+
       return true;
     } catch (e) {
+      debugPrint('Error accepting order: $e');
       return false;
+    }
+  }
+
+  Future<void> _notifyOrderAssignment(
+      String orderId, Map<String, dynamic> orderData) async {
+    try {
+      // Notify customer
+      if (orderData['customerId'] != null) {
+        final customerDoc = await _firebaseService.getDocument(
+          AppConstants.usersCollection,
+          orderData['customerId'],
+        );
+
+        if (customerDoc.exists) {
+          final customerData = customerDoc.data() as Map<String, dynamic>;
+          if (customerData['fcmToken'] != null) {
+            // Send FCM notification to customer using Cloud Function
+            await _functions.httpsCallable('sendNotification').call({
+              'token': customerData['fcmToken'],
+              'title': 'Order Assigned',
+              'body': 'A delivery partner has been assigned to your order',
+              'data': {
+                'type': 'order_assigned',
+                'orderId': orderId,
+              },
+            });
+          }
+        }
+      }
+
+      // Notify store
+      if (orderData['vendorId'] != null) {
+        final storeDoc = await _firebaseService.getDocument(
+          AppConstants.storesCollection,
+          orderData['vendorId'],
+        );
+
+        if (storeDoc.exists) {
+          final storeData = storeDoc.data() as Map<String, dynamic>;
+          if (storeData['fcmToken'] != null) {
+            // Send FCM notification to store using Cloud Function
+            await _functions.httpsCallable('sendNotification').call({
+              'token': storeData['fcmToken'],
+              'title': 'Order Assigned',
+              'body': 'A delivery partner has been assigned to the order',
+              'data': {
+                'type': 'order_assigned',
+                'orderId': orderId,
+              },
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error notifying order assignment: $e');
     }
   }
 
@@ -147,18 +234,119 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<bool> updateOrderStatus(String orderId, String status) async {
     try {
+      final userId = await _getUserId();
+      if (userId == null) return false;
+
+      // Get order document
+      final orderDoc = await _firebaseService.getDocument(
+        AppConstants.ordersCollection,
+        orderId,
+      );
+
+      if (!orderDoc.exists) return false;
+
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      if (orderData['deliveryBoyId'] != userId) return false;
+
+      // Update order status
       await _firebaseService.updateDocument(
         AppConstants.ordersCollection,
         orderId,
         {
-          'status': status,
-          'status_updated_at': FieldValue.serverTimestamp(),
+          'orderStatus': status,
+          'statusUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         },
       );
 
+      // Notify relevant parties about status update
+      await _notifyStatusUpdate(orderId, orderData, status);
+
       return true;
     } catch (e) {
+      debugPrint('Error updating order status: $e');
       return false;
+    }
+  }
+
+  Future<void> _notifyStatusUpdate(
+    String orderId,
+    Map<String, dynamic> orderData,
+    String status,
+  ) async {
+    try {
+      final statusMessage = _getStatusMessage(status);
+
+      // Notify customer
+      if (orderData['customerId'] != null) {
+        final customerDoc = await _firebaseService.getDocument(
+          AppConstants.usersCollection,
+          orderData['customerId'],
+        );
+
+        if (customerDoc.exists) {
+          final customerData = customerDoc.data() as Map<String, dynamic>;
+          if (customerData['fcmToken'] != null) {
+            // Send FCM notification to customer using Cloud Function
+            await _functions.httpsCallable('sendNotification').call({
+              'token': customerData['fcmToken'],
+              'title': 'Order Update',
+              'body': statusMessage,
+              'data': {
+                'type': 'order_status_update',
+                'orderId': orderId,
+                'status': status,
+              },
+            });
+          }
+        }
+      }
+
+      // Notify store
+      if (orderData['vendorId'] != null) {
+        final storeDoc = await _firebaseService.getDocument(
+          AppConstants.storesCollection,
+          orderData['vendorId'],
+        );
+
+        if (storeDoc.exists) {
+          final storeData = storeDoc.data() as Map<String, dynamic>;
+          if (storeData['fcmToken'] != null) {
+            // Send FCM notification to store using Cloud Function
+            await _functions.httpsCallable('sendNotification').call({
+              'token': storeData['fcmToken'],
+              'title': 'Order Update',
+              'body': statusMessage,
+              'data': {
+                'type': 'order_status_update',
+                'orderId': orderId,
+                'status': status,
+              },
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error notifying status update: $e');
+    }
+  }
+
+  String _getStatusMessage(String status) {
+    switch (status) {
+      case AppConstants.orderStatusOnTheWayToPickup:
+        return 'Delivery partner is on the way to pick up your order';
+      case AppConstants.orderStatusArrivedAtPickup:
+        return 'Delivery partner has arrived at the store';
+      case AppConstants.orderStatusPickedUp:
+        return 'Your order has been picked up';
+      case AppConstants.orderStatusOutForDelivery:
+        return 'Your order is out for delivery';
+      case AppConstants.orderStatusArrivedAtDelivery:
+        return 'Delivery partner has arrived at your location';
+      case AppConstants.orderStatusDelivered:
+        return 'Your order has been delivered';
+      default:
+        return 'Order status has been updated';
     }
   }
 
@@ -287,11 +475,11 @@ class OrderRepositoryImpl implements OrderRepository {
   Future<app_user.User?> getCustomerDetails(String orderId) async {
     try {
       final order = await getOrderById(orderId);
-      if (order == null || order.userId == null) return null;
+      if (order == null) return null;
 
       final doc = await _firebaseService.getDocument(
         AppConstants.usersCollection,
-        order.userId!,
+        order.customerId,
       );
 
       if (doc.exists) {
@@ -305,18 +493,18 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
-  Future<Store?> getStoreDetails(String orderId) async {
+  Future<store_model.Store?> getStoreDetails(String orderId) async {
     try {
       final order = await getOrderById(orderId);
-      if (order == null || order.storeId == null) return null;
+      if (order == null) return null;
 
       final doc = await _firebaseService.getDocument(
         AppConstants.storesCollection,
-        order.storeId!,
+        order.vendorId,
       );
 
       if (doc.exists) {
-        return Store.fromFirestore(doc);
+        return store_model.Store.fromFirestore(doc);
       } else {
         return null;
       }
@@ -326,43 +514,45 @@ class OrderRepositoryImpl implements OrderRepository {
   }
 
   @override
-  Future<List<OrderItem>> getOrderItems(String orderId) async {
+  Future<List<order_model.OrderItem>> getOrderItems(String orderId) async {
     try {
       final order = await getOrderById(orderId);
-      if (order == null || order.items == null) return [];
+      if (order == null) return [];
 
-      return order.items!;
+      return order.items;
     } catch (e) {
       return [];
     }
   }
 
   @override
-  Stream<List<Order>> listenForNewOrders() {
+  Stream<List<order_model.Order>> listenForNewOrders() {
     try {
       // Get orders that are waiting for assignment
       final stream = _firebaseService.collectionStream(
         AppConstants.ordersCollection,
         field: 'status',
-        isEqualTo: 'waiting_for_driver',
+        value: 'waiting_for_driver',
       );
 
-      return stream.map((snapshot) =>
-          snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList());
+      return stream.map((snapshot) => snapshot.docs
+          .map((doc) => order_model.Order.fromFirestore(doc))
+          .toList());
     } catch (e) {
       return Stream.value([]);
     }
   }
 
   @override
-  Stream<Order> listenForOrderUpdates(String orderId) {
+  Stream<order_model.Order> listenForOrderUpdates(String orderId) {
     try {
       final stream = _firebaseService.documentStream(
         AppConstants.ordersCollection,
         orderId,
       );
 
-      return stream.map((snapshot) => Order.fromFirestore(snapshot));
+      return stream
+          .map((snapshot) => order_model.Order.fromFirestore(snapshot));
     } catch (e) {
       return Stream.empty();
     }

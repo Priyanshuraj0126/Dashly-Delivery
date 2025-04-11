@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 class CustomDivider extends StatelessWidget {
   final double height;
@@ -36,9 +37,9 @@ class CustomDivider extends StatelessWidget {
     final effectiveColor = color ?? AppColors.border;
     final effectiveGradientColors = gradientColors ??
         [
-          effectiveColor.withOpacity(gradientOpacity),
+          ColorUtils.withAlpha(effectiveColor, gradientOpacity),
           effectiveColor,
-          effectiveColor.withOpacity(gradientOpacity),
+          ColorUtils.withAlpha(effectiveColor, gradientOpacity),
         ];
 
     Widget divider;

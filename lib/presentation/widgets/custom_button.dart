@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 /// A custom button widget with loading state support
 class CustomButton extends StatelessWidget {
@@ -59,7 +60,7 @@ class CustomButton extends StatelessWidget {
                   )
                 : BorderSide.none,
           ),
-          disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
+          disabledBackgroundColor: ColorUtils.withAlpha(AppColors.primary, 0.5),
         ),
         child: _buildButtonContent(),
       ),

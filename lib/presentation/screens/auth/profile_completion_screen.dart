@@ -22,7 +22,7 @@ class ProfileCompletionScreen extends StatefulWidget {
 }
 
 class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>(debugLabel: 'profile_completion_form');
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _vehicleNumberController = TextEditingController();
@@ -51,6 +51,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
   }
 
   void _submitForm() {
+    if (!_isFormValid()) return;
     if (_formKey.currentState?.validate() ?? false) {
       context.read<AuthBloc>().add(
             UpdateUserDetailsEvent(
@@ -90,7 +91,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                 backgroundColor: AppColors.error,
               ),
             );
-          } else if (state is AuthenticatedState) {
+          } else if (state is AuthAuthenticatedState) {
             // Navigate to home/dashboard after successful profile completion
             // In a real app, we'd use a navigator or route management system
             // to handle this transition
@@ -175,8 +176,8 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     // Full Name
                     CustomTextField(
                       controller: _nameController,
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person),
+                      label: 'Full Name',
+                      prefix: Icon(Icons.person),
                       keyboardType: TextInputType.name,
                       textCapitalization: TextCapitalization.words,
                       validator: (value) {
@@ -191,8 +192,8 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     // Email
                     CustomTextField(
                       controller: _emailController,
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email),
+                      label: 'Email',
+                      prefix: Icon(Icons.email),
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -258,8 +259,8 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     // Vehicle Number
                     CustomTextField(
                       controller: _vehicleNumberController,
-                      labelText: 'Vehicle Number',
-                      prefixIcon: Icon(Icons.directions_car),
+                      label: 'Vehicle Number',
+                      prefix: Icon(Icons.directions_car),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your vehicle number';
@@ -274,7 +275,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                       builder: (context, state) {
                         return CustomButton(
                           text: 'Complete Profile',
-                          onPressed: _isFormValid() ? _submitForm : null,
+                          onPressed: _submitForm,
                           isLoading: state is UpdatingUserDetailsState,
                           width: double.infinity,
                           height: 52,

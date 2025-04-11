@@ -35,13 +35,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Update user availability in the database
     final userState = context.read<AuthBloc>().state;
-    if (userState is AuthenticatedState) {
-      final user = userState.user;
+
+    if (userState is AuthAuthenticatedState) {
+      final userId = userState.userId;
 
       // If going on duty, start location updates and check zone
       if (_isOnDuty) {
         context.read<LocationBloc>().add(StartLocationUpdatesEvent());
-        context.read<LocationBloc>().add(CheckZoneEvent());
+        // Get current location and assigned zone before checking
+        context.read<LocationBloc>().add(FetchAssignedZoneEvent());
         context.read<OrderBloc>().add(StartListeningForNewOrdersEvent());
       } else {
         context.read<LocationBloc>().add(StopLocationUpdatesEvent());
@@ -88,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: RefreshIndicator(
         onRefresh: () async {
           context.read<OrderBloc>().add(FetchActiveOrdersEvent());
-          context.read<LocationBloc>().add(CheckZoneEvent());
+          context.read<LocationBloc>().add(FetchAssignedZoneEvent());
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -294,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               onPressed: () {
                                 context
                                     .read<LocationBloc>()
-                                    .add(CheckZoneEvent());
+                                    .add(FetchAssignedZoneEvent());
                               },
                               isOutlined: true,
                               height: 40,
@@ -399,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             orderId: order.id,
                                             storeName: order.store.name,
                                             status: order.status,
-                                            amount: order.amount,
+                                            amount: order.totalAmount,
                                             onTap: () {
                                               // Navigate to order details
                                             },

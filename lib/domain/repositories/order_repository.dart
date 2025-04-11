@@ -1,18 +1,18 @@
-import '../../data/models/order.dart';
+import '../../data/models/order.dart' as order_model;
 import '../../data/models/delivery_boy.dart';
-import '../../data/models/store.dart';
+import '../../data/models/store.dart' as store_model;
 import '../../data/models/user.dart';
 
 /// Interface for order-related operations
 abstract class OrderRepository {
   /// Get order by id
-  Future<Order?> getOrderById(String orderId);
+  Future<order_model.Order?> getOrderById(String orderId);
 
   /// Get active orders for current delivery boy
-  Future<List<Order>> getActiveOrders();
+  Future<List<order_model.Order>> getActiveOrders();
 
   /// Get order history
-  Future<List<Order>> getOrderHistory({
+  Future<List<order_model.Order>> getOrderHistory({
     DateTime? startDate,
     DateTime? endDate,
     int limit = 50,
@@ -55,16 +55,16 @@ abstract class OrderRepository {
   Future<User?> getCustomerDetails(String orderId);
 
   /// Get store details for order
-  Future<Store?> getStoreDetails(String orderId);
+  Future<store_model.Store?> getStoreDetails(String orderId);
 
   /// Get order items
-  Future<List<OrderItem>> getOrderItems(String orderId);
+  Future<List<order_model.OrderItem>> getOrderItems(String orderId);
 
   /// Start listening for new orders
-  Stream<List<Order>> listenForNewOrders();
+  Stream<List<order_model.Order>> listenForNewOrders();
 
   /// Start listening for specific order updates
-  Stream<Order> listenForOrderUpdates(String orderId);
+  Stream<order_model.Order> listenForOrderUpdates(String orderId);
 
   /// Report issue with order
   Future<bool> reportOrderIssue(

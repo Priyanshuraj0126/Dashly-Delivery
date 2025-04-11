@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/auth/login_screen.dart';
-import '../../presentation/screens/auth/otp_screen.dart';
-import '../../presentation/screens/auth/onboarding_screen.dart';
-import '../../presentation/screens/home/home_screen.dart';
+import '../../presentation/screens/auth/otp_verification_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_screen.dart';
+import '../../presentation/screens/dashboard/home_screen.dart';
 import '../../presentation/screens/orders/order_details_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
@@ -29,7 +29,7 @@ class AppRoutes {
       case RouteNames.otp:
         final args = settings.arguments as Map<String, dynamic>?;
         return MaterialPageRoute(
-          builder: (_) => OtpScreen(
+          builder: (_) => OtpVerificationScreen(
             phoneNumber: args?['phoneNumber'] as String? ?? '',
             verificationId: args?['verificationId'] as String? ?? '',
           ),

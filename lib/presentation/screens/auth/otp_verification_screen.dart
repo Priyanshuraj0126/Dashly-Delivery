@@ -69,9 +69,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       });
 
       // Request new OTP
-      context
-          .read<AuthBloc>()
-          .add(SendOtpEvent(phoneNumber: widget.phoneNumber));
+      context.read<AuthBloc>().add(SendOtpEvent(widget.phoneNumber));
 
       // Start timer again
       _startResendTimer();
@@ -89,6 +87,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
+  // Empty callback when button should be disabled
+  void _doNothing() {}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,7 +105,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       ),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
-          if (state is AuthVerifyingOtpState) {
+          if (state is AuthLoadingState) {
             // Show loading
           } else if (state is AuthErrorState) {
             // Show error
@@ -229,8 +230,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     builder: (context, state) {
                       return CustomButton(
                         text: 'Verify',
-                        onPressed: _isButtonEnabled ? _verifyOtp : null,
-                        isLoading: state is AuthVerifyingOtpState,
+                        onPressed: _isButtonEnabled ? _verifyOtp : _doNothing,
+                        isLoading: state is AuthLoadingState,
                         width: double.infinity,
                         height: 52,
                       );

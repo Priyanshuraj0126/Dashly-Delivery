@@ -1,21 +1,24 @@
 part of 'auth_bloc.dart';
 
-/// Base class for all authentication states
-abstract class AuthState {
+/// Base class for authentication states
+abstract class AuthState extends Equatable {
   const AuthState();
+
+  @override
+  List<Object?> get props => [];
 }
 
-/// Initial state when the app starts
+/// Initial authentication state
 class AuthInitialState extends AuthState {
   const AuthInitialState();
 }
 
-/// State when authentication is in progress
+/// Loading authentication state
 class AuthLoadingState extends AuthState {
   const AuthLoadingState();
 }
 
-/// State when user is authenticated
+/// Authenticated state
 class AuthAuthenticatedState extends AuthState {
   final bool isProfileComplete;
   final String userId;
@@ -26,9 +29,17 @@ class AuthAuthenticatedState extends AuthState {
     required this.userId,
     required this.phoneNumber,
   });
+
+  @override
+  List<Object?> get props => [isProfileComplete, userId, phoneNumber];
 }
 
-/// State when OTP has been sent
+/// Unauthenticated state
+class AuthUnauthenticatedState extends AuthState {
+  const AuthUnauthenticatedState();
+}
+
+/// OTP sent state
 class AuthOtpSentState extends AuthState {
   final String verificationId;
   final String phoneNumber;
@@ -37,34 +48,47 @@ class AuthOtpSentState extends AuthState {
     required this.verificationId,
     required this.phoneNumber,
   });
+
+  @override
+  List<Object?> get props => [verificationId, phoneNumber];
 }
 
-/// State when there's an authentication error
+/// Error state
 class AuthErrorState extends AuthState {
   final String message;
 
   const AuthErrorState(this.message);
+
+  @override
+  List<Object?> get props => [message];
 }
 
-/// State when user is not authenticated
-class AuthUnauthenticatedState extends AuthState {
-  const AuthUnauthenticatedState();
-}
-
+/// State when sending OTP
 class AuthSendingOtpState extends AuthState {}
 
-class AuthAwaitingOtpState extends AuthState {}
+class AuthVerifyingOtpState extends AuthState {}
 
 class ProfileIncompleteState extends AuthState {
-  final User user;
+  final String userId;
+  final String phoneNumber;
 
-  const ProfileIncompleteState({required this.user});
+  const ProfileIncompleteState({
+    required this.userId,
+    required this.phoneNumber,
+  });
 }
 
-class UpdatingUserDetailsState extends AuthState {}
-
 class UserDetailsUpdatedState extends AuthState {
-  final User user;
+  final bool isSuccess;
+  final String message;
 
-  const UserDetailsUpdatedState({required this.user});
+  const UserDetailsUpdatedState({
+    required this.isSuccess,
+    required this.message,
+  });
+}
+
+/// State when updating user details
+class UpdatingUserDetailsState extends AuthState {
+  const UpdatingUserDetailsState();
 }

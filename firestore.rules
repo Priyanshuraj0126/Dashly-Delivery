@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow authenticated users to read and write their own user profile
+    match /users/{userId} {
+      allow create: if request.auth != null;
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      // Allow read access to user profiles for authenticated users to check if a phone number exists
+      allow get: if request.auth != null;
+      // Allow querying users by phone number for authenticated users
+      allow list: if request.auth != null && request.query.limit <= 10;
+    }
+    
+    // Allow authenticated users to read and write their own cart data
+    match /carts/{cartId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Allow all users to read store details and products (public access for browsing)
+    match /stores/{storeId} {
+      allow read: if true;  // Allow public reading of stores
+      
+      // Allow nested products to be read publicly
+      match /products/{productId} {
+        allow read: if true;  // Allow public reading of products
+      }
+    }
+    
+    // Allow authenticated users to manage their own orders
+    match /orders/{orderId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read, update: if request.auth != null && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores
+      );
+    }
+
+    // Allow delivery boys to manage their own profiles
+    match /delivery_boys/{deliveryBoyId} {
+      allow create: if request.auth != null && request.auth.uid == deliveryBoyId;
+      allow read, update: if request.auth != null && request.auth.uid == deliveryBoyId;
+      allow get: if request.auth != null;
+      allow list: if request.auth != null && request.query.limit <= 10;
+    }
+  }
+} 

@@ -1,11 +1,15 @@
-import 'location.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Address type enum
+enum AddressType {
+  home,
+  work,
+  other,
+}
+
+/// Model class representing an address
 class Address {
   final String id;
-  final String userId;
-  final String type;
-  final String name;
-  final String phoneNumber;
   final String street;
   final String? apartment;
   final String? landmark;
@@ -13,19 +17,15 @@ class Address {
   final String state;
   final String country;
   final String postalCode;
-  final Location location;
+  final AddressType type;
+  final String? phoneNumber;
+  final GeoPoint location;
   final bool isDefault;
-  final bool isVerified;
   final DateTime createdAt;
-  final DateTime? updatedAt;
-  final Map<String, dynamic>? metadata;
+  final DateTime updatedAt;
 
-  Address({
+  const Address({
     required this.id,
-    required this.userId,
-    required this.type,
-    required this.name,
-    required this.phoneNumber,
     required this.street,
     this.apartment,
     this.landmark,
@@ -33,68 +33,80 @@ class Address {
     required this.state,
     required this.country,
     required this.postalCode,
+    required this.type,
+    this.phoneNumber,
     required this.location,
-    required this.isDefault,
-    required this.isVerified,
+    this.isDefault = false,
     required this.createdAt,
-    this.updatedAt,
-    this.metadata,
+    required this.updatedAt,
   });
 
-  factory Address.fromJson(Map<String, dynamic> json) {
+  /// Get the full address as a string
+  String get fullAddress {
+    final parts = <String>[];
+
+    if (street.isNotEmpty) parts.add(street);
+    if (apartment != null && apartment!.isNotEmpty) parts.add('Apt $apartment');
+    if (landmark != null && landmark!.isNotEmpty) parts.add('Near $landmark');
+
+    final cityState = '$city, $state';
+    if (cityState.isNotEmpty) parts.add(cityState);
+
+    if (postalCode.isNotEmpty) parts.add(postalCode);
+    if (country.isNotEmpty) parts.add(country);
+
+    return parts.join(', ');
+  }
+
+  /// Create an Address from a Firestore document
+  factory Address.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? {};
+    return Address.fromMap(data);
+  }
+
+  /// Create an Address from a map
+  factory Address.fromMap(Map<String, dynamic> data) {
     return Address(
-      id: json['id'] as String,
-      userId: json['userId'] as String,
-      type: json['type'] as String,
-      name: json['name'] as String,
-      phoneNumber: json['phoneNumber'] as String,
-      street: json['street'] as String,
-      apartment: json['apartment'] as String?,
-      landmark: json['landmark'] as String?,
-      city: json['city'] as String,
-      state: json['state'] as String,
-      country: json['country'] as String,
-      postalCode: json['postalCode'] as String,
-      location: Location.fromJson(json['location'] as Map<String, dynamic>),
-      isDefault: json['isDefault'] as bool,
-      isVerified: json['isVerified'] as bool,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'] as String)
-          : null,
-      metadata: json['metadata'] as Map<String, dynamic>?,
+      id: data['id'] as String? ?? '',
+      street: data['street'] as String? ?? '',
+      apartment: data['apartment'] as String?,
+      landmark: data['landmark'] as String?,
+      city: data['city'] as String? ?? '',
+      state: data['state'] as String? ?? '',
+      country: data['country'] as String? ?? '',
+      postalCode: data['postal_code'] as String? ?? '',
+      type: _parseAddressType(data['type'] as String?),
+      phoneNumber: data['phone_number'] as String?,
+      location: data['location'] as GeoPoint? ?? const GeoPoint(0, 0),
+      isDefault: data['is_default'] as bool? ?? false,
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
-  Map<String, dynamic> toJson() {
+  /// Convert the Address to a map
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'userId': userId,
-      'type': type,
-      'name': name,
-      'phoneNumber': phoneNumber,
       'street': street,
       'apartment': apartment,
       'landmark': landmark,
       'city': city,
       'state': state,
       'country': country,
-      'postalCode': postalCode,
-      'location': location.toJson(),
-      'isDefault': isDefault,
-      'isVerified': isVerified,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
-      'metadata': metadata,
+      'postal_code': postalCode,
+      'type': type.name,
+      'phone_number': phoneNumber,
+      'location': location,
+      'is_default': isDefault,
+      'created_at': Timestamp.fromDate(createdAt),
+      'updated_at': Timestamp.fromDate(updatedAt),
     };
   }
 
+  /// Create a copy of this Address with the given fields replaced
   Address copyWith({
     String? id,
-    String? userId,
-    String? type,
-    String? name,
-    String? phoneNumber,
     String? street,
     String? apartment,
     String? landmark,
@@ -102,19 +114,15 @@ class Address {
     String? state,
     String? country,
     String? postalCode,
-    Location? location,
+    AddressType? type,
+    String? phoneNumber,
+    GeoPoint? location,
     bool? isDefault,
-    bool? isVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Map<String, dynamic>? metadata,
   }) {
     return Address(
       id: id ?? this.id,
-      userId: userId ?? this.userId,
-      type: type ?? this.type,
-      name: name ?? this.name,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
       street: street ?? this.street,
       apartment: apartment ?? this.apartment,
       landmark: landmark ?? this.landmark,
@@ -122,59 +130,26 @@ class Address {
       state: state ?? this.state,
       country: country ?? this.country,
       postalCode: postalCode ?? this.postalCode,
+      type: type ?? this.type,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
       location: location ?? this.location,
       isDefault: isDefault ?? this.isDefault,
-      isVerified: isVerified ?? this.isVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      metadata: metadata ?? this.metadata,
     );
   }
 
-  /// Get full address
-  String get fullAddress {
-    final parts = [
-      street,
-      if (apartment != null) apartment,
-      if (landmark != null) 'Near $landmark',
-      '$city, $state',
-      '$country, $postalCode',
-    ];
-    return parts.where((part) => part != null).join(', ');
-  }
+  /// Parse an address type from a string
+  static AddressType _parseAddressType(String? type) {
+    if (type == null) return AddressType.other;
 
-  /// Get address type display name
-  String get displayType {
     switch (type.toLowerCase()) {
       case 'home':
-        return 'Home';
+        return AddressType.home;
       case 'work':
-        return 'Work';
-      case 'other':
-        return 'Other';
+        return AddressType.work;
       default:
-        return type
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
+        return AddressType.other;
     }
-  }
-
-  /// Get formatted phone number
-  String get formattedPhoneNumber {
-    if (phoneNumber.length == 10) {
-      return '+91 ${phoneNumber.substring(0, 5)} ${phoneNumber.substring(5)}';
-    }
-    return phoneNumber;
-  }
-
-  /// Calculate distance to another location
-  double distanceTo(Location other) {
-    return location.distanceTo(other);
-  }
-
-  /// Check if address is within a certain radius
-  bool isWithinRadius(Location other, double radiusInKm) {
-    return location.isWithinRadius(other, radiusInKm);
   }
 }

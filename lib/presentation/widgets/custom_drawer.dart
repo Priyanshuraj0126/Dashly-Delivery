@@ -65,7 +65,7 @@ class CustomDrawer extends StatelessWidget {
     );
   }
 
-  static Future<T?> show<T>({
+  static Future<void> show({
     required BuildContext context,
     required Widget child,
     double width = 300,
@@ -78,20 +78,20 @@ class CustomDrawer extends StatelessWidget {
     bool isScrollable = true,
     ScrollController? scrollController,
   }) {
-    return showDrawer<T>(
-      context: context,
-      builder: (context) => CustomDrawer(
-        width: width,
-        elevation: elevation,
-        backgroundColor: backgroundColor,
-        padding: padding,
-        showCloseIcon: showCloseIcon,
-        borderRadius: borderRadius,
-        borderColor: borderColor,
-        isScrollable: isScrollable,
-        scrollController: scrollController,
-        child: child,
-      ),
+    final drawer = CustomDrawer(
+      width: width,
+      elevation: elevation,
+      backgroundColor: backgroundColor,
+      padding: padding,
+      showCloseIcon: showCloseIcon,
+      borderRadius: borderRadius,
+      borderColor: borderColor,
+      isScrollable: isScrollable,
+      scrollController: scrollController,
+      child: child,
     );
+
+    Scaffold.of(context).openDrawer();
+    return Future.value();
   }
 }

@@ -12,7 +12,7 @@ class CustomTabBar extends StatelessWidget implements PreferredSizeWidget {
   final double labelFontSize;
   final FontWeight labelFontWeight;
   final EdgeInsets? labelPadding;
-  final EdgeInsets? tabAlignment;
+  final EdgeInsets? padding;
   final double height;
   final Color? backgroundColor;
   final double elevation;
@@ -31,7 +31,7 @@ class CustomTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.labelFontSize = 14.0,
     this.labelFontWeight = FontWeight.w600,
     this.labelPadding,
-    this.tabAlignment,
+    this.padding,
     this.height = kToolbarHeight,
     this.backgroundColor,
     this.elevation = 0,
@@ -55,6 +55,7 @@ class CustomTabBar extends StatelessWidget implements PreferredSizeWidget {
             : null,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           TabBar(
             controller: controller,
@@ -71,7 +72,7 @@ class CustomTabBar extends StatelessWidget implements PreferredSizeWidget {
             ),
             labelPadding:
                 labelPadding ?? const EdgeInsets.symmetric(horizontal: 16),
-            tabAlignment: tabAlignment ?? TabAlignment.start,
+            padding: padding,
           ),
           if (showDivider)
             Divider(

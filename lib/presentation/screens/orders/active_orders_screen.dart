@@ -449,7 +449,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
             onPressed: () {
               Navigator.pop(context);
               context.read<OrderBloc>().add(
-                    RejectOrderEvent(orderId: orderId),
+                    RejectOrderEvent(orderId: orderId, reason: ''),
                   );
             },
             child: Text(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 class CustomCard extends StatelessWidget {
   final Widget child;
@@ -43,7 +44,7 @@ class CustomCard extends StatelessWidget {
         boxShadow: showShadow
             ? [
                 BoxShadow(
-                  color: AppColors.shadow.withOpacity(0.1),
+                  color: ColorUtils.withAlpha(AppColors.shadow, 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),

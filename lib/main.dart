@@ -1,9 +1,12 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 import 'core/constants/app_colors.dart';
 import 'core/services/auth/auth_service.dart';
@@ -20,6 +23,8 @@ import 'presentation/blocs/auth/auth_bloc.dart';
 import 'presentation/blocs/location/location_bloc.dart';
 import 'presentation/blocs/order/order_bloc.dart';
 import 'presentation/screens/splash/splash_screen.dart';
+import 'providers/settings_provider.dart';
+import 'config/routes/app_routes.dart';
 
 // Global initialization of notification channel for background messages
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -93,47 +98,42 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 }
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Set preferred orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  // Set up background message handler
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final prefs = await SharedPreferences.getInstance();
 
   // Initialize services
   final storageService = StorageService();
   await storageService.init();
 
-  final firebaseService = FirebaseService();
   final authService = AuthService();
   final locationService = LocationService();
+  final firebaseService = FirebaseService();
 
   // Initialize repositories
-  final userRepository = UserRepository(firebaseService: firebaseService);
   final authRepository = AuthRepositoryImpl(
     authService: authService,
     firebaseService: firebaseService,
     storageService: storageService,
   );
-  final orderRepository = OrderRepositoryImpl(
-    firebaseService: firebaseService,
-  );
+
   final deliveryRepository = DeliveryRepositoryImpl(
     firebaseService: firebaseService,
     locationService: locationService,
   );
 
-  // Create BLoCs
+  final orderRepository = OrderRepositoryImpl(
+    firebaseService: firebaseService,
+    messagingService:
+        null, // Will be updated after FirebaseMessagingService is created
+  );
+
+  final userRepository = UserRepository(
+    firebaseService: firebaseService,
+  );
+
+  // Initialize blocs
   final authBloc = AuthBloc(
     authService: authService,
     storageService: storageService,
@@ -150,7 +150,7 @@ void main() async {
     deliveryRepository: deliveryRepository,
   );
 
-  // Initialize Firebase Messaging Service
+  // Initialize Firebase Messaging Service after all dependencies are created
   final firebaseMessagingService = FirebaseMessagingService(
     orderRepository: orderRepository,
     authRepository: authRepository,
@@ -158,48 +158,20 @@ void main() async {
   );
   await firebaseMessagingService.initialize();
 
+  // Update the order repository with the messaging service
+  orderRepository.updateMessagingService(firebaseMessagingService);
+
   runApp(
-    MultiRepositoryProvider(
+    MultiProvider(
       providers: [
-        RepositoryProvider<AuthService>(
-          create: (context) => authService,
+        ChangeNotifierProvider(
+          create: (_) => SettingsProvider(prefs),
         ),
-        RepositoryProvider<StorageService>(
-          create: (context) => storageService,
-        ),
-        RepositoryProvider<FirebaseService>(
-          create: (context) => firebaseService,
-        ),
-        RepositoryProvider<LocationService>(
-          create: (context) => locationService,
-        ),
-        RepositoryProvider<UserRepository>(
-          create: (context) => userRepository,
-        ),
-        RepositoryProvider<OrderRepositoryImpl>(
-          create: (context) => orderRepository,
-        ),
-        RepositoryProvider<DeliveryRepositoryImpl>(
-          create: (context) => deliveryRepository,
-        ),
-        RepositoryProvider<FirebaseMessagingService>(
-          create: (context) => firebaseMessagingService,
-        ),
+        BlocProvider<AuthBloc>(create: (context) => authBloc),
+        BlocProvider<LocationBloc>(create: (context) => locationBloc),
+        BlocProvider<OrderBloc>(create: (context) => orderBloc),
       ],
-      child: MultiBlocProvider(
-        providers: [
-          BlocProvider<AuthBloc>(
-            create: (context) => authBloc,
-          ),
-          BlocProvider<LocationBloc>(
-            create: (context) => locationBloc,
-          ),
-          BlocProvider<OrderBloc>(
-            create: (context) => orderBloc,
-          ),
-        ],
-        child: const MyApp(),
-      ),
+      child: const MyApp(),
     ),
   );
 }
@@ -210,93 +182,51 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Dashly Delivery',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          primary: AppColors.primary,
-          secondary: AppColors.secondary,
-          background: AppColors.background,
-          surface: AppColors.surface,
-          error: AppColors.error,
-        ),
-        scaffoldBackgroundColor: AppColors.background,
-        appBarTheme: AppBarTheme(
-          backgroundColor: AppColors.primary,
-          elevation: 0,
-          iconTheme: const IconThemeData(color: Colors.white),
-          titleTextStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, _) {
+        return MaterialApp(
+          title: 'Dashly Delivery',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              secondary: AppColors.secondary,
+              error: AppColors.error,
+              surface: AppColors.background,
+              onPrimary: Colors.white,
+              onSecondary: Colors.white,
+            ),
+            scaffoldBackgroundColor: AppColors.background,
+            appBarTheme: AppBarTheme(
+              backgroundColor: AppColors.primary,
+              elevation: 0,
+              iconTheme: const IconThemeData(color: Colors.white),
+              titleTextStyle: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
+              ),
+            ),
             fontFamily: 'Poppins',
           ),
-        ),
-        fontFamily: 'Poppins',
-        textTheme: TextTheme(
-          displayLarge: TextStyle(color: AppColors.textPrimary),
-          displayMedium: TextStyle(color: AppColors.textPrimary),
-          displaySmall: TextStyle(color: AppColors.textPrimary),
-          headlineLarge: TextStyle(color: AppColors.textPrimary),
-          headlineMedium: TextStyle(color: AppColors.textPrimary),
-          headlineSmall: TextStyle(color: AppColors.textPrimary),
-          titleLarge: TextStyle(color: AppColors.textPrimary),
-          titleMedium: TextStyle(color: AppColors.textPrimary),
-          titleSmall: TextStyle(color: AppColors.textPrimary),
-          bodyLarge: TextStyle(color: AppColors.textPrimary),
-          bodyMedium: TextStyle(color: AppColors.textPrimary),
-          bodySmall: TextStyle(color: AppColors.textSecondary),
-          labelLarge: TextStyle(color: AppColors.textPrimary),
-          labelMedium: TextStyle(color: AppColors.textPrimary),
-          labelSmall: TextStyle(color: AppColors.textSecondary),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            textStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.divider),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.divider),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.primary, width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.error),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.error, width: 2),
-          ),
-          fillColor: Colors.white,
-          filled: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          labelStyle: TextStyle(color: AppColors.textSecondary),
-          hintStyle: TextStyle(color: AppColors.textHint),
-        ),
-      ),
-      home: const SplashScreen(),
+          locale: Locale(settings.selectedLanguage),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('en'), // English
+            Locale('hi'), // Hindi
+            Locale('mr'), // Marathi
+          ],
+          onGenerateRoute: AppRoutes.generateRoute,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }

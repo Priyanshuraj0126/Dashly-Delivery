@@ -1,3 +1,4 @@
+import 'package:dashly_delivery/presentation/blocs/auth/auth_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -6,6 +7,7 @@ import '../../../presentation/blocs/earnings/earnings_event.dart';
 import '../../../presentation/blocs/earnings/earnings_state.dart';
 import '../../../presentation/widgets/custom_button.dart';
 import '../../../presentation/widgets/loading_indicator.dart';
+import '../../blocs/earnings/earnings_bloc.dart';
 
 class EarningsScreen extends StatefulWidget {
   const EarningsScreen({super.key});
@@ -28,10 +30,10 @@ class _EarningsScreenState extends State<EarningsScreen>
   }
 
   void _loadEarningsData() {
-    final userId = context.read<AuthBloc>().state.user?.id;
-    if (userId != null) {
+    final state = context.read<AuthBloc>().state;
+    if (state is AuthAuthenticatedState) {
       context.read<EarningsBloc>().add(LoadEarningsSummaryEvent(
-            deliveryPartnerId: userId,
+            deliveryPartnerId: state.userId,
             startDate: _getStartDate(),
             endDate: _getEndDate(),
           ));
@@ -173,7 +175,7 @@ class _EarningsScreenState extends State<EarningsScreen>
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : AppColors.text,
+            color: isSelected ? Colors.white : AppColors.textPrimary,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         ),

@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -29,7 +29,15 @@ class FirebaseService {
     String collection,
     String documentId,
   ) async {
-    return await _firestore.collection(collection).doc(documentId).get();
+    debugPrint('Fetching document: $collection/$documentId');
+    try {
+      final doc = await _firestore.collection(collection).doc(documentId).get();
+      debugPrint('Document exists: ${doc.exists}');
+      return doc;
+    } catch (e) {
+      debugPrint('Error fetching document: $e');
+      rethrow;
+    }
   }
 
   /// Get all documents in a collection

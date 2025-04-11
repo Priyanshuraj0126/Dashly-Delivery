@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/theme/app_colors.dart';
+import '../../core/utils/color_utils.dart';
 
 class CustomErrorWidget extends StatelessWidget {
   final String message;
@@ -62,7 +63,7 @@ class CustomErrorWidget extends StatelessWidget {
         boxShadow: showShadow
             ? [
                 BoxShadow(
-                  color: AppColors.shadow.withOpacity(0.1),
+                  color: ColorUtils.withAlpha(AppColors.shadow, 0.1),
                   blurRadius: elevation,
                   offset: const Offset(0, 2),
                 ),

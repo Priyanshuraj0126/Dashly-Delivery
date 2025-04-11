@@ -19,6 +19,11 @@ class User extends Equatable {
   final Map<String, dynamic>? bankDetails;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? profilePicture;
+  final String? address;
+  final bool isOnline;
+  final DateTime? lastActive;
+  final Map<String, dynamic>? metadata;
 
   const User({
     required this.id,
@@ -38,6 +43,11 @@ class User extends Equatable {
     this.bankDetails,
     required this.createdAt,
     required this.updatedAt,
+    this.profilePicture,
+    this.address,
+    this.isOnline = false,
+    this.lastActive,
+    this.metadata,
   });
 
   @override
@@ -59,6 +69,11 @@ class User extends Equatable {
         bankDetails,
         createdAt,
         updatedAt,
+        profilePicture,
+        address,
+        isOnline,
+        lastActive,
+        metadata,
       ];
 
   User copyWith({
@@ -79,6 +94,11 @@ class User extends Equatable {
     Map<String, dynamic>? bankDetails,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? profilePicture,
+    String? address,
+    bool? isOnline,
+    DateTime? lastActive,
+    Map<String, dynamic>? metadata,
   }) {
     return User(
       id: id ?? this.id,
@@ -98,6 +118,11 @@ class User extends Equatable {
       bankDetails: bankDetails ?? this.bankDetails,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      profilePicture: profilePicture ?? this.profilePicture,
+      address: address ?? this.address,
+      isOnline: isOnline ?? this.isOnline,
+      lastActive: lastActive ?? this.lastActive,
+      metadata: metadata ?? this.metadata,
     );
   }
 
@@ -120,6 +145,13 @@ class User extends Equatable {
       bankDetails: json['bankDetails'] as Map<String, dynamic>?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      profilePicture: json['profilePicture'] as String?,
+      address: json['address'] as String?,
+      isOnline: json['isOnline'] as bool? ?? false,
+      lastActive: json['lastActive'] == null
+          ? null
+          : DateTime.parse(json['lastActive'] as String),
+      metadata: json['metadata'] as Map<String, dynamic>?,
     );
   }
 
@@ -142,6 +174,11 @@ class User extends Equatable {
       'bankDetails': bankDetails,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'profilePicture': profilePicture,
+      'address': address,
+      'isOnline': isOnline,
+      'lastActive': lastActive?.toIso8601String(),
+      'metadata': metadata,
     };
   }
 }

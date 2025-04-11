@@ -48,6 +48,11 @@ class Order {
   final DateTime createdAt;
   final DateTime updatedAt;
   final Customer? _customer; // Private customer field
+  final double? distance; // Distance in kilometers
+  final double? deliveryCharges; // Delivery charges
+  final DateTime? completedAt; // When the order was completed
+  final String? paymentMethod; // Payment method used
+  final String? storeId; // Store ID
 
   Order({
     required this.id,
@@ -71,6 +76,11 @@ class Order {
     required this.createdAt,
     required this.updatedAt,
     Customer? customer,
+    this.distance,
+    this.deliveryCharges,
+    this.completedAt,
+    this.paymentMethod,
+    this.storeId,
   }) : _customer = customer;
 
   /// Get customer - if not provided, create a placeholder with delivery address
@@ -165,6 +175,13 @@ class Order {
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       customer: parseCustomer(),
+      distance: data['distance'] as double?,
+      deliveryCharges: data['delivery_charges'] as double?,
+      completedAt: data['completed_at'] != null
+          ? DateTime.parse(data['completed_at'] as String)
+          : null,
+      paymentMethod: data['payment_method'] as String?,
+      storeId: data['store_id'] as String?,
     );
   }
 
@@ -191,6 +208,11 @@ class Order {
       'customer': _customer?.toMap(),
       'created_at': Timestamp.fromDate(createdAt),
       'updated_at': Timestamp.fromDate(updatedAt),
+      'distance': distance,
+      'delivery_charges': deliveryCharges,
+      'completed_at': completedAt?.toIso8601String(),
+      'payment_method': paymentMethod,
+      'store_id': storeId,
     };
   }
 
@@ -217,6 +239,11 @@ class Order {
     DateTime? createdAt,
     DateTime? updatedAt,
     Customer? customer,
+    double? distance,
+    double? deliveryCharges,
+    DateTime? completedAt,
+    String? paymentMethod,
+    String? storeId,
   }) {
     return Order(
       id: id ?? this.id,
@@ -240,6 +267,11 @@ class Order {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       customer: customer ?? _customer,
+      distance: distance ?? this.distance,
+      deliveryCharges: deliveryCharges ?? this.deliveryCharges,
+      completedAt: completedAt ?? this.completedAt,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      storeId: storeId ?? this.storeId,
     );
   }
 

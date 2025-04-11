@@ -1,14 +1,60 @@
 import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
-
+import 'package:equatable/equatable.dart';
 import '../../../core/services/auth/auth_service.dart';
 import '../../../core/services/storage/storage_service.dart';
 import '../../../data/repositories/user_repository.dart';
-import '../../../domain/models/user.dart';
+import 'package:flutter/foundation.dart';
 
 part 'auth_event.dart';
 part 'auth_state.dart';
+
+abstract class AuthEvent extends Equatable {
+  const AuthEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
+class CompleteOnboardingEvent extends AuthEvent {
+  final String name;
+  final String email;
+  final String address;
+  final String vehicleType;
+  final String vehicleNumber;
+  final String bankAccount;
+  final String ifscCode;
+  final String aadharNumber;
+  final String panNumber;
+  final String drivingLicense;
+
+  const CompleteOnboardingEvent({
+    required this.name,
+    required this.email,
+    required this.address,
+    required this.vehicleType,
+    required this.vehicleNumber,
+    required this.bankAccount,
+    required this.ifscCode,
+    required this.aadharNumber,
+    required this.panNumber,
+    required this.drivingLicense,
+  });
+
+  @override
+  List<Object?> get props => [
+        name,
+        email,
+        address,
+        vehicleType,
+        vehicleNumber,
+        bankAccount,
+        ifscCode,
+        aadharNumber,
+        panNumber,
+        drivingLicense,
+      ];
+}
 
 /// BLoC for handling authentication state and operations
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -31,6 +77,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<UpdateProfileEvent>(_onUpdateProfile);
     on<UploadDocumentEvent>(_onUploadDocument);
     on<CompleteOnboardingEvent>(_onCompleteOnboarding);
+    on<TestLoginEvent>(_onTestLogin);
 
     // Listen to auth state changes
     _authService.authStateChanges.listen((user) {
@@ -46,19 +93,25 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     CheckAuthStatusEvent event,
     Emitter<AuthState> emit,
   ) async {
+    debugPrint('Checking auth status...');
     emit(const AuthLoadingState());
 
     final user = _authService.currentUser;
+    debugPrint('Current user: ${user?.uid}');
+
     if (user == null) {
+      debugPrint('No user found, emitting unauthenticated state');
       emit(const AuthUnauthenticatedState());
       return;
     }
 
     if (_authService.isSessionExpired()) {
+      debugPrint('Session expired, emitting unauthenticated state');
       emit(const AuthUnauthenticatedState());
       return;
     }
 
+    debugPrint('Checking user profile...');
     await _checkUserProfile(user.uid);
   }
 
@@ -66,27 +119,47 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     SendOtpEvent event,
     Emitter<AuthState> emit,
   ) async {
+    debugPrint('Sending OTP to: ${event.phoneNumber}');
     emit(const AuthLoadingState());
 
     try {
+      final completer = Completer<void>();
+
       final error = await _authService.signInWithPhoneNumber(
         phoneNumber: event.phoneNumber,
         onCodeSent: (verificationId, resendToken) {
-          emit(AuthOtpSentState(
-            verificationId: verificationId,
-            phoneNumber: event.phoneNumber,
-          ));
+          debugPrint('OTP sent successfully. VerificationId: $verificationId');
+          if (!emit.isDone) {
+            emit(AuthOtpSentState(
+              verificationId: verificationId,
+              phoneNumber: event.phoneNumber,
+            ));
+          }
+          completer.complete();
         },
         onVerificationFailed: (e) {
-          emit(AuthErrorState(e.message ?? 'Verification failed'));
+          debugPrint('OTP verification failed: ${e.message}');
+          if (!emit.isDone) {
+            emit(AuthErrorState(e.message ?? 'Verification failed'));
+          }
+          completer.complete();
         },
       );
 
       if (error != null) {
-        emit(AuthErrorState(error));
+        debugPrint('Error sending OTP: $error');
+        if (!emit.isDone) {
+          emit(AuthErrorState(error));
+        }
+        return;
       }
+
+      await completer.future;
     } catch (e) {
-      emit(AuthErrorState(e.toString()));
+      debugPrint('Exception sending OTP: $e');
+      if (!emit.isDone) {
+        emit(AuthErrorState(e.toString()));
+      }
     }
   }
 
@@ -94,25 +167,52 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     VerifyOtpEvent event,
     Emitter<AuthState> emit,
   ) async {
-    emit(const AuthLoadingState());
-
     try {
+      emit(const AuthLoadingState());
+      debugPrint('Verifying OTP...');
+
       final userCredential = await _authService.verifyOtp(
         event.verificationId,
         event.otp,
       );
 
-      if (userCredential != null) {
-        final user = userCredential.user;
-        if (user != null) {
-          await _storageService.saveUserId(user.uid);
-          await _storageService.savePhoneNumber(user.phoneNumber ?? '');
-          await _checkUserProfile(user.uid);
-        }
-      } else {
+      if (userCredential == null || userCredential.user == null) {
         emit(const AuthErrorState('Failed to verify OTP'));
+        return;
+      }
+
+      final userId = userCredential.user!.uid;
+      debugPrint('OTP verified successfully. User ID: $userId');
+
+      // Save auth data first
+      await _storageService.saveUserId(userId);
+      await _storageService
+          .savePhoneNumber(userCredential.user!.phoneNumber ?? '');
+
+      // Wait for Firebase Auth state to be fully updated
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      try {
+        // Now try to get the user profile
+        final userProfile = await _userRepository.getProfile(userId);
+        debugPrint('User profile fetched: ${userProfile != null}');
+
+        emit(AuthAuthenticatedState(
+          isProfileComplete: userProfile?['isProfileComplete'] ?? false,
+          userId: userId,
+          phoneNumber: userCredential.user!.phoneNumber ?? '',
+        ));
+      } catch (e) {
+        debugPrint('Error getting profile after OTP verification: $e');
+        // Even if profile fetch fails, user is still authenticated
+        emit(AuthAuthenticatedState(
+          isProfileComplete: false,
+          userId: userId,
+          phoneNumber: userCredential.user!.phoneNumber ?? '',
+        ));
       }
     } catch (e) {
+      debugPrint('Error verifying OTP: $e');
       emit(AuthErrorState(e.toString()));
     }
   }
@@ -180,32 +280,152 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     CompleteOnboardingEvent event,
     Emitter<AuthState> emit,
   ) async {
-    emit(const AuthLoadingState());
-
     try {
+      emit(UpdatingUserDetailsState());
+
       final userId = _storageService.getUserId();
       if (userId == null) {
-        emit(const AuthErrorState('User not found'));
+        emit(const AuthErrorState('User ID not found'));
         return;
       }
 
-      await _userRepository.completeOnboarding(userId, event.onboardingData);
-      await _checkUserProfile(userId);
+      // Update user profile with onboarding details
+      await _userRepository.updateProfile(
+        userId,
+        {
+          'name': event.name,
+          'email': event.email,
+          'address': event.address,
+          'vehicleType': event.vehicleType,
+          'vehicleNumber': event.vehicleNumber,
+          'bankAccount': event.bankAccount,
+          'ifscCode': event.ifscCode,
+          'aadharNumber': event.aadharNumber,
+          'panNumber': event.panNumber,
+          'drivingLicense': event.drivingLicense,
+          'isProfileComplete': true,
+        },
+      );
+
+      // Mark onboarding as complete in storage
+      await _storageService.saveProfileCompletionStatus(true);
+
+      // Get updated user profile
+      final userProfile = await _userRepository.getProfile(userId);
+      if (userProfile != null) {
+        emit(AuthAuthenticatedState(
+          isProfileComplete: true,
+          userId: userProfile['id'] as String,
+          phoneNumber: userProfile['phoneNumber'] as String,
+        ));
+      } else {
+        emit(const AuthErrorState('Failed to get updated profile'));
+      }
     } catch (e) {
       emit(AuthErrorState(e.toString()));
     }
   }
 
+  Future<void> _onTestLogin(
+    TestLoginEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    if (!kDebugMode) {
+      emit(const AuthErrorState('Test login is only available in debug mode'));
+      return;
+    }
+
+    emit(const AuthLoadingState());
+    debugPrint('Attempting test login with phone: ${event.testPhoneNumber}');
+
+    try {
+      // Use a completer to handle the async verification process
+      final completer = Completer<String>();
+
+      // Start phone number verification
+      final error = await _authService.signInWithPhoneNumber(
+        phoneNumber: event.testPhoneNumber,
+        onCodeSent: (verificationId, resendToken) {
+          debugPrint('Test verification ID received: $verificationId');
+          completer.complete(verificationId);
+        },
+        onVerificationFailed: (e) {
+          debugPrint('Test verification failed: ${e.message}');
+          completer.completeError(e);
+        },
+      );
+
+      if (error != null) {
+        throw Exception(error);
+      }
+
+      // Wait for verification ID
+      final verificationId = await completer.future;
+
+      // For test login, we'll use a fixed OTP code
+      const testOtp = '123456';
+
+      // Verify the OTP
+      final userCredential = await _authService.verifyOtp(
+        verificationId,
+        testOtp,
+      );
+
+      if (userCredential == null || userCredential.user == null) {
+        throw Exception('Failed to verify test OTP');
+      }
+
+      final testUserId = userCredential.user!.uid;
+      debugPrint('Test user authenticated with ID: $testUserId');
+
+      // Save local storage data
+      await _storageService.saveUserId(testUserId);
+      await _storageService.savePhoneNumber(event.testPhoneNumber);
+
+      // Create or update test user in Firestore
+      await _userRepository.updateProfile(
+        testUserId,
+        {
+          'phoneNumber': event.testPhoneNumber,
+          'isProfileComplete': true,
+          'name': 'Test User',
+          'email': 'test@example.com',
+          'createdAt': DateTime.now().toIso8601String(),
+          'updatedAt': DateTime.now().toIso8601String(),
+          'isTestUser': true, // Flag to identify test users
+          'role': 'delivery_boy', // Add role for permissions
+          'status': 'active', // Add status
+        },
+      );
+
+      emit(AuthAuthenticatedState(
+        isProfileComplete: true,
+        userId: testUserId,
+        phoneNumber: event.testPhoneNumber,
+      ));
+
+      debugPrint('Test login successful');
+    } catch (e) {
+      debugPrint('Test login failed: $e');
+      emit(AuthErrorState(e.toString()));
+    }
+  }
+
   Future<void> _checkUserProfile(String userId) async {
+    debugPrint('Fetching user profile for $userId');
     try {
       final userProfile = await _userRepository.getProfile(userId);
+      debugPrint('User profile fetched: ${userProfile != null}');
+
       if (userProfile == null) {
+        debugPrint('No profile found, emitting unauthenticated state');
         emit(const AuthUnauthenticatedState());
         return;
       }
 
       final isProfileComplete = userProfile['isProfileComplete'] ?? false;
       final phoneNumber = userProfile['phoneNumber'] ?? '';
+      debugPrint('Profile complete: $isProfileComplete, Phone: $phoneNumber');
 
       emit(AuthAuthenticatedState(
         isProfileComplete: isProfileComplete,
@@ -213,6 +433,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         phoneNumber: phoneNumber,
       ));
     } catch (e) {
+      debugPrint('Error checking profile: $e');
       emit(AuthErrorState(e.toString()));
     }
   }

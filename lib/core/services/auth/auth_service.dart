@@ -11,22 +11,37 @@ class AuthService {
   AuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
 
   /// Get the current authenticated user
-  User? get currentUser => _auth.currentUser;
+  User? get currentUser {
+    final user = _auth.currentUser;
+    debugPrint('Current user: ${user?.uid}');
+    return user;
+  }
 
   /// Get the current user's ID
   String? get currentUserId => _auth.currentUser?.uid;
 
   /// Check if a user is currently authenticated
-  bool get isAuthenticated => _auth.currentUser != null;
+  bool get isAuthenticated {
+    final authenticated = _auth.currentUser != null;
+    debugPrint('Is authenticated: $authenticated');
+    return authenticated;
+  }
 
   /// Check if the current session is expired
   bool isSessionExpired() {
     final lastSignInTime = _auth.currentUser?.metadata.lastSignInTime;
-    if (lastSignInTime == null) return true;
+    debugPrint('Last sign in time: $lastSignInTime');
+
+    if (lastSignInTime == null) {
+      debugPrint('No last sign in time, session expired');
+      return true;
+    }
 
     final now = DateTime.now();
     final difference = now.difference(lastSignInTime).inMilliseconds;
-    return difference > _sessionDuration;
+    final expired = difference > _sessionDuration;
+    debugPrint('Session expired: $expired (difference: ${difference}ms)');
+    return expired;
   }
 
   /// Sign in with phone number
@@ -132,4 +147,15 @@ class AuthService {
 
   /// Stream of authentication state changes
   Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  /// Signs in anonymously for testing purposes
+  Future<UserCredential?> signInAnonymously() async {
+    try {
+      final userCredential = await _auth.signInAnonymously();
+      return userCredential;
+    } catch (e) {
+      debugPrint('Error signing in anonymously: $e');
+      return null;
+    }
+  }
 }

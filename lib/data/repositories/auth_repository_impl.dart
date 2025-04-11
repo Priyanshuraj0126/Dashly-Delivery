@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-
 import '../../core/constants/app_constants.dart';
 import '../../core/services/auth/auth_service.dart';
 import '../../core/services/firebase/firebase_service.dart';
@@ -60,7 +59,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   String? getUserId() {
-    return _authService.getUserId();
+    return _authService.currentUserId;
   }
 
   @override
@@ -68,20 +67,9 @@ class AuthRepositoryImpl implements AuthRepository {
     Completer<bool> completer = Completer<bool>();
 
     try {
-      await _authService.signInWithPhone(
-        phoneNumber,
-        verificationCompleted: (credential) async {
-          // Auto-verification completed (Android only)
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
-        },
-        verificationFailed: (e) {
-          if (!completer.isCompleted) {
-            completer.complete(false);
-          }
-        },
-        codeSent: (verificationId, resendToken) {
+      final error = await _authService.signInWithPhoneNumber(
+        phoneNumber: phoneNumber,
+        onCodeSent: (verificationId, resendToken) {
           // Save the verification ID for later use
           _storageService.saveCredentials({
             'verificationId': verificationId,
@@ -92,13 +80,16 @@ class AuthRepositoryImpl implements AuthRepository {
             completer.complete(true);
           }
         },
-        codeAutoRetrievalTimeout: (verificationId) {
-          // Auto-retrieval timeout
+        onVerificationFailed: (e) {
           if (!completer.isCompleted) {
             completer.complete(false);
           }
         },
       );
+
+      if (error != null) {
+        return false;
+      }
 
       return await completer.future;
     } catch (e) {
@@ -119,7 +110,7 @@ class AuthRepositoryImpl implements AuthRepository {
         }
 
         // Save user ID
-        final userId = _authService.getUserId();
+        final userId = _authService.currentUserId;
         if (userId != null) {
           await _storageService.saveUserId(userId);
 
@@ -139,7 +130,7 @@ class AuthRepositoryImpl implements AuthRepository {
             ));
 
             // Update last active timestamp
-            await _storageService.saveLastActive();
+            await _storageService.updateLastActiveTimestamp();
           }
         }
 
@@ -159,7 +150,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final querySnapshot = await _firebaseService.getDocumentsWithQuery(
         AppConstants.deliveryBoysCollection,
         field: 'phone',
-        isEqualTo: phoneNumber,
+        value: phoneNumber,
       );
 
       if (querySnapshot.docs.isNotEmpty) {
@@ -175,7 +166,7 @@ class AuthRepositoryImpl implements AuthRepository {
         return user;
       } else {
         // User does not exist in Firestore yet
-        final userId = _authService.getUserId();
+        final userId = _authService.currentUserId;
         if (userId == null) return null;
 
         // Create minimal user entry
@@ -202,10 +193,11 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<bool> signOut() async {
     try {
       // Clear local storage
-      await _storageService.clear();
+      await _storageService.clearAll();
 
       // Sign out from Firebase
-      return await _authService.signOut();
+      await _authService.signOut();
+      return true;
     } catch (e) {
       return false;
     }
@@ -213,8 +205,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<bool> isAuthenticated() async {
-    final isUserAuthenticated = _authService.isAuthenticated();
-    if (!isUserAuthenticated) return false;
+    if (!_authService.isAuthenticated) return false;
 
     // Check if session is expired
     return !(await isSessionExpired());
@@ -223,7 +214,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<DeliveryBoy?> getUserProfile() async {
     try {
-      final userId = _authService.getUserId();
+      final userId = _authService.currentUserId;
       if (userId == null) return null;
 
       final doc = await _firebaseService.getDocument(
@@ -244,7 +235,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<bool> updateProfile(DeliveryBoy deliveryBoy) async {
     try {
-      final userId = _authService.getUserId();
+      final userId = _authService.currentUserId;
       if (userId == null) return false;
 
       // Make sure we're updating the correct user
@@ -275,7 +266,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<String?> uploadProfileImage(String imagePath) async {
     try {
-      final userId = _authService.getUserId();
+      final userId = _authService.currentUserId;
       if (userId == null) return null;
 
       final file = File(imagePath);
@@ -293,7 +284,7 @@ class AuthRepositoryImpl implements AuthRepository {
       if (profile != null) {
         await updateProfile(profile.copyWith(photoUrl: downloadUrl));
       }
-    
+
       return downloadUrl;
     } catch (e) {
       return null;
@@ -303,7 +294,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<String?> uploadDocument(String documentType, String filePath) async {
     try {
-      final userId = _authService.getUserId();
+      final userId = _authService.currentUserId;
       if (userId == null) return null;
 
       final file = File(filePath);
@@ -338,7 +329,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<bool> updateFcmToken(String token) async {
     try {
-      final userId = _authService.getUserId();
+      final userId = _authService.currentUserId;
       if (userId == null) return false;
 
       // Update in Firestore
@@ -365,11 +356,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<bool> refreshToken() async {
     try {
       // Refresh Firebase token
-      final success = await _authService.refreshToken();
-      if (!success) return false;
-
-      // Get new token
-      final token = await _authService.getIdToken();
+      final token = await _authService.refreshIdToken();
       if (token == null) return false;
 
       // Save new token
@@ -386,7 +373,7 @@ class AuthRepositoryImpl implements AuthRepository {
       }
 
       // Update last active timestamp
-      await _storageService.saveLastActive();
+      await _storageService.updateLastActiveTimestamp();
 
       return true;
     } catch (e) {
@@ -428,10 +415,9 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<bool> isSessionExpired() async {
     // Check Firebase session
-    final isExpired = _authService.isSessionExpired();
-    if (isExpired) return true;
+    if (_authService.isSessionExpired()) return true;
 
     // Check local session timeout
-    return _storageService.hasSessionExpired(AppConstants.sessionDuration);
+    return _storageService.isSessionExpired();
   }
 }
