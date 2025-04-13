@@ -32,8 +32,15 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow read, update: if request.auth != null && (
         resource.data.userId == request.auth.uid || 
-        resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores
+        resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores ||
+        resource.data.delivery_boy_id == request.auth.uid  // Allow delivery personnel to access their assigned orders
       );
+      
+      // Allow delivery personnel to query their orders
+      allow list: if request.auth != null && 
+                   request.query.filters.size() > 0 &&
+                   request.query.filters[0].fieldPath == "delivery_boy_id" && 
+                   request.query.filters[0].value == request.auth.uid;
     }
 
     // Allow delivery boys to manage their own profiles

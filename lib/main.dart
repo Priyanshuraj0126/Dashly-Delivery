@@ -155,6 +155,7 @@ Future<void> main() async {
     orderRepository: orderRepository,
     authRepository: authRepository,
     orderBloc: orderBloc,
+    storageService: storageService,
   );
   await firebaseMessagingService.initialize();
 

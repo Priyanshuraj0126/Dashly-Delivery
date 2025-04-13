@@ -144,6 +144,13 @@ class ProfileScreen extends StatelessWidget {
             child: CustomButton(
               text: 'Logout',
               onPressed: () {
+                // First navigate away, then sign out
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/login',
+                  (route) => false,
+                );
+                // Then trigger sign out
                 context.read<AuthBloc>().add(SignOutEvent());
               },
             ),

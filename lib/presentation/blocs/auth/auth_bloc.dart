@@ -56,6 +56,10 @@ class CompleteOnboardingEvent extends AuthEvent {
       ];
 }
 
+class ForceProfileIncompleteEvent extends AuthEvent {
+  const ForceProfileIncompleteEvent();
+}
+
 /// BLoC for handling authentication state and operations
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthService _authService;
@@ -78,13 +82,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<UploadDocumentEvent>(_onUploadDocument);
     on<CompleteOnboardingEvent>(_onCompleteOnboarding);
     on<TestLoginEvent>(_onTestLogin);
+    on<ForceProfileIncompleteEvent>(_onForceProfileIncomplete);
 
     // Listen to auth state changes
     _authService.authStateChanges.listen((user) {
       if (user != null) {
         _checkUserProfile(user.uid);
       } else {
-        add(const SignOutEvent());
+        // Don't automatically trigger sign out when auth state changes to null
+        // This prevents the circular dependency when signing out
+        debugPrint('Auth state changed to null (user signed out)');
+        // Just emit the unauthenticated state directly instead of triggering another sign out
+        emit(const AuthUnauthenticatedState());
       }
     });
   }
@@ -197,14 +206,45 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final userProfile = await _userRepository.getProfile(userId);
         debugPrint('User profile fetched: ${userProfile != null}');
 
-        emit(AuthAuthenticatedState(
-          isProfileComplete: userProfile?['isProfileComplete'] ?? false,
-          userId: userId,
-          phoneNumber: userCredential.user!.phoneNumber ?? '',
-        ));
+        // Check if this is a new user or an existing user
+        final bool isNewUser =
+            userProfile?['createdAt'] == userProfile?['updatedAt'];
+        debugPrint('Is new user: $isNewUser');
+
+        // For new users, ensure profile is marked as incomplete
+        if (isNewUser) {
+          debugPrint(
+              'New user detected, ensuring profile is marked as incomplete');
+          await _storageService.saveProfileCompletionStatus(false);
+
+          // Update the Firebase profile to ensure it's marked as incomplete
+          await _userRepository.updateProfile(userId, {
+            'isProfileComplete': false,
+            'phoneNumber': userCredential.user!.phoneNumber ?? '',
+          });
+
+          // Emit authenticated state with isProfileComplete = false for new users
+          emit(AuthAuthenticatedState(
+            isProfileComplete: false,
+            userId: userId,
+            phoneNumber: userCredential.user!.phoneNumber ?? '',
+          ));
+        } else {
+          // For existing users, use the profile completion status from database
+          final bool isProfileComplete =
+              userProfile?['isProfileComplete'] ?? false;
+          debugPrint(
+              'Existing user with profile completion status: $isProfileComplete');
+
+          emit(AuthAuthenticatedState(
+            isProfileComplete: isProfileComplete,
+            userId: userId,
+            phoneNumber: userCredential.user!.phoneNumber ?? '',
+          ));
+        }
       } catch (e) {
         debugPrint('Error getting profile after OTP verification: $e');
-        // Even if profile fetch fails, user is still authenticated
+        // If profile fetch fails, force to onboarding for safety
         emit(AuthAuthenticatedState(
           isProfileComplete: false,
           userId: userId,
@@ -315,8 +355,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (userProfile != null) {
         emit(AuthAuthenticatedState(
           isProfileComplete: true,
-          userId: userProfile['id'] as String,
-          phoneNumber: userProfile['phoneNumber'] as String,
+          userId: userId,
+          phoneNumber: userProfile['phoneNumber'] as String? ?? '',
         ));
       } else {
         emit(const AuthErrorState('Failed to get updated profile'));
@@ -411,6 +451,42 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
+  Future<void> _onForceProfileIncomplete(
+    ForceProfileIncompleteEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    try {
+      final userId = _storageService.getUserId();
+      if (userId == null) {
+        emit(const AuthErrorState('User ID not found'));
+        return;
+      }
+
+      // Update the Firebase profile to ensure it's marked as incomplete
+      await _userRepository.updateProfile(userId, {
+        'isProfileComplete': false,
+        'phoneNumber': '',
+      });
+
+      // Mark onboarding as incomplete in storage
+      await _storageService.saveProfileCompletionStatus(false);
+
+      // Get updated user profile
+      final userProfile = await _userRepository.getProfile(userId);
+      if (userProfile != null) {
+        emit(AuthAuthenticatedState(
+          isProfileComplete: false,
+          userId: userId,
+          phoneNumber: '',
+        ));
+      } else {
+        emit(const AuthErrorState('Failed to get updated profile'));
+      }
+    } catch (e) {
+      emit(AuthErrorState(e.toString()));
+    }
+  }
+
   Future<void> _checkUserProfile(String userId) async {
     debugPrint('Fetching user profile for $userId');
     try {
@@ -423,9 +499,60 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
 
-      final isProfileComplete = userProfile['isProfileComplete'] ?? false;
+      // Check if user is currently in onboarding process
+      final bool onboardingInProgress =
+          _storageService.getOnboardingInProgress();
+      if (onboardingInProgress) {
+        debugPrint(
+            'Onboarding is in progress, forcing profile to incomplete state');
+        emit(AuthAuthenticatedState(
+          isProfileComplete: false,
+          userId: userId,
+          phoneNumber: userProfile['phoneNumber'] as String? ?? '',
+        ));
+        return;
+      }
+
+      // Check if any required fields are missing
+      final bool hasAllRequiredFields = userProfile.containsKey('name') &&
+          userProfile['name'] != null &&
+          userProfile['name'].toString().trim().isNotEmpty &&
+          userProfile.containsKey('email') &&
+          userProfile['email'] != null &&
+          userProfile['email'].toString().trim().isNotEmpty &&
+          userProfile.containsKey('address') &&
+          userProfile['address'] != null &&
+          userProfile['address'].toString().trim().isNotEmpty &&
+          userProfile.containsKey('vehicleType') &&
+          userProfile['vehicleType'] != null &&
+          userProfile['vehicleType'].toString().trim().isNotEmpty &&
+          userProfile.containsKey('vehicleNumber') &&
+          userProfile['vehicleNumber'] != null &&
+          userProfile['vehicleNumber'].toString().trim().isNotEmpty;
+
+      // Get the stored profile completion status
+      final bool storedProfileStatus =
+          userProfile['isProfileComplete'] ?? false;
+
+      // Profile is only complete if it has all required fields AND is marked as complete
+      final bool isProfileComplete =
+          hasAllRequiredFields && storedProfileStatus;
+
+      debugPrint(
+          'Profile completion check: hasRequiredFields=$hasAllRequiredFields, storedStatus=$storedProfileStatus, final=$isProfileComplete');
+
+      // If the status doesn't match what's stored, update it
+      if (isProfileComplete != storedProfileStatus) {
+        debugPrint(
+            'Updating profile completion status in database to: $isProfileComplete');
+        await _userRepository
+            .updateProfile(userId, {'isProfileComplete': isProfileComplete});
+        await _storageService.saveProfileCompletionStatus(isProfileComplete);
+      }
+
       final phoneNumber = userProfile['phoneNumber'] ?? '';
-      debugPrint('Profile complete: $isProfileComplete, Phone: $phoneNumber');
+      debugPrint(
+          'Final profile complete status: $isProfileComplete, Phone: $phoneNumber');
 
       emit(AuthAuthenticatedState(
         isProfileComplete: isProfileComplete,

@@ -6,6 +6,11 @@ import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/location/location_bloc.dart';
 import '../../blocs/order/order_bloc.dart';
 import '../../widgets/custom_button.dart';
+import '../orders/active_orders_screen.dart';
+import '../orders/order_history_screen.dart';
+import '../earnings/earnings_screen.dart';
+import '../profile/profile_screen.dart';
+import '../../../config/routes/route_names.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,15 +22,30 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isOnDuty = false;
 
+  // Changed from instance to static variable to persist across widget rebuilds
+  static bool _hasCheckedAuth = false;
+
   @override
   void initState() {
     super.initState();
 
-    // Check authentication and load user data
-    context.read<AuthBloc>().add(CheckAuthStatusEvent());
-
-    // Start listening for orders when the screen loads
+    // Only start listening for orders when the screen loads
     context.read<OrderBloc>().add(FetchActiveOrdersEvent());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Check authentication only once across all instances of HomeScreen
+    if (!_hasCheckedAuth) {
+      debugPrint(
+          'Performing initial auth check on HomeScreen (first time only)');
+      context.read<AuthBloc>().add(CheckAuthStatusEvent());
+      _hasCheckedAuth = true;
+    } else {
+      debugPrint('Skipping redundant auth check on HomeScreen');
+    }
   }
 
   void _toggleDutyStatus() {
@@ -50,6 +70,15 @@ class _HomeScreenState extends State<HomeScreen> {
         context.read<OrderBloc>().add(StopListeningForNewOrdersEvent());
       }
     }
+
+    // Show feedback to user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('You are now ${_isOnDuty ? 'Online' : 'Offline'}'),
+        backgroundColor: _isOnDuty ? AppColors.success : AppColors.error,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -84,13 +113,58 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 8),
+          // Add logout button
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () {
+              // Show confirmation dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Logout'),
+                  content: Text('Are you sure you want to logout?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        'Logout',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ).then((shouldLogout) {
+                if (shouldLogout == true) {
+                  // First navigate away, then sign out
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    RouteNames.login,
+                    (route) => false,
+                  );
+                  // Then trigger sign out
+                  context.read<AuthBloc>().add(SignOutEvent());
+                }
+              });
+            },
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
+          // Only refresh orders and location data, not auth status
+          // This prevents triggering redundant auth checks
+          debugPrint('Manual refresh triggered by user');
           context.read<OrderBloc>().add(FetchActiveOrdersEvent());
           context.read<LocationBloc>().add(FetchAssignedZoneEvent());
+
+          // Add a small delay to ensure the refresh indicator is shown
+          await Future.delayed(const Duration(milliseconds: 500));
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -99,6 +173,25 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Welcome message with user's phone number
+                BlocBuilder<AuthBloc, AuthState>(
+                  builder: (context, state) {
+                    if (state is AuthAuthenticatedState) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          'Welcome, ${state.phoneNumber}',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    }
+                    return SizedBox.shrink();
+                  },
+                ),
+
                 // Duty Status Card
                 Card(
                   elevation: 4,
@@ -157,6 +250,124 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const SizedBox(height: 24),
 
+                // Quick Actions Grid
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Quick Actions',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      children: [
+                        _buildActionCard(
+                          context,
+                          'Active Orders',
+                          Icons.delivery_dining,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const ActiveOrdersScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildActionCard(
+                          context,
+                          'Earnings',
+                          Icons.attach_money,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const EarningsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildActionCard(
+                          context,
+                          'Profile',
+                          Icons.person,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ProfileScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        BlocBuilder<OrderBloc, OrderState>(
+                          builder: (context, state) {
+                            int orderCount = 0;
+
+                            if (state is ActiveOrdersLoadedState) {
+                              orderCount = state.orders.length;
+                            }
+
+                            return Stack(
+                              children: [
+                                _buildActionCard(
+                                  context,
+                                  'Orders History',
+                                  Icons.history,
+                                  () {
+                                    context
+                                        .read<OrderBloc>()
+                                        .add(FetchOrderHistoryEvent());
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const OrderHistoryScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                if (orderCount > 0)
+                                  Positioned(
+                                    right: 8,
+                                    top: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Text(
+                                        orderCount.toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
                 // Zone Status Card
                 BlocBuilder<LocationBloc, LocationState>(
                   builder: (context, state) {
@@ -199,51 +410,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                         size: 20,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        'You are in an active zone',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: AppColors.success,
-                                          fontWeight: FontWeight.bold,
+                                      Expanded(
+                                        child: Text(
+                                          'You are assigned to ${state.zone.name}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Zone: ${state.zone.name}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else if (state is OutsideZoneState)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.warning,
-                                        color: AppColors.warning,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'You are outside delivery zones',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: AppColors.warning,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Move to an active zone to receive orders',
+                                    '${state.zone.description}',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: AppColors.textSecondary,
@@ -260,11 +441,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                     size: 20,
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    'Location error: ${state.message}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: AppColors.error,
+                                  Expanded(
+                                    child: Text(
+                                      'Error loading zone: ${state.message}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.error,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -272,182 +455,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             else
                               Row(
                                 children: [
-                                  SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppColors.primary,
-                                    ),
+                                  Icon(
+                                    Icons.info,
+                                    color: AppColors.warning,
+                                    size: 20,
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    'Checking your zone...',
+                                  const Text(
+                                    'No zone assigned yet',
                                     style: TextStyle(
                                       fontSize: 16,
-                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
                               ),
-                            const SizedBox(height: 12),
-                            CustomButton(
-                              text: 'Refresh Zone Status',
-                              onPressed: () {
-                                context
-                                    .read<LocationBloc>()
-                                    .add(FetchAssignedZoneEvent());
-                              },
-                              isOutlined: true,
-                              height: 40,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 24),
-
-                // Orders Summary Card
-                BlocBuilder<OrderBloc, OrderState>(
-                  builder: (context, state) {
-                    return Card(
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Orders Summary',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            if (state is OrderLoadingState)
-                              Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.primary,
-                                ),
-                              )
-                            else if (state is ActiveOrdersLoadedState)
-                              state.orders.isEmpty
-                                  ? Center(
-                                      child: Column(
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline,
-                                            size: 48,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            'No active orders',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            _isOnDuty
-                                                ? 'Wait for new orders to come in'
-                                                : 'Go on duty to receive orders',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : Column(
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              'Active Orders',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${state.orders.length}',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppColors.primary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        const Divider(),
-                                        const SizedBox(height: 8),
-                                        ...state.orders.take(3).map((order) {
-                                          return OrderSummaryItem(
-                                            orderId: order.id,
-                                            storeName: order.store.name,
-                                            status: order.status,
-                                            amount: order.totalAmount,
-                                            onTap: () {
-                                              // Navigate to order details
-                                            },
-                                          );
-                                        }),
-                                        if (state.orders.length > 3)
-                                          Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 8.0),
-                                            child: Text(
-                                              'and ${state.orders.length - 3} more...',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    )
-                            else if (state is OrderErrorState)
-                              Center(
-                                child: Text(
-                                  'Error: ${state.message}',
-                                  style: TextStyle(
-                                    color: AppColors.error,
-                                  ),
-                                ),
-                              )
-                            else
-                              Center(
-                                child: Text(
-                                  'No data available',
-                                  style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(height: 16),
-                            CustomButton(
-                              text: 'View All Orders',
-                              onPressed: () {
-                                // Navigate to orders tab
-                                DefaultTabController.of(context).animateTo(1);
-                              },
-                              width: double.infinity,
-                            ),
                           ],
                         ),
                       ),
@@ -461,117 +483,43 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
 
-class OrderSummaryItem extends StatelessWidget {
-  final String orderId;
-  final String storeName;
-  final String status;
-  final double amount;
-  final VoidCallback onTap;
-
-  const OrderSummaryItem({
-    super.key,
-    required this.orderId,
-    required this.storeName,
-    required this.status,
-    required this.amount,
-    required this.onTap,
-  });
-
-  Color _getStatusColor() {
-    switch (status.toLowerCase()) {
-      case 'new':
-        return AppColors.orderNew;
-      case 'accepted':
-        return AppColors.orderAccepted;
-      case 'picked up':
-        return AppColors.orderPicked;
-      case 'out for delivery':
-        return AppColors.orderDelivering;
-      case 'delivered':
-        return AppColors.orderDelivered;
-      case 'cancelled':
-        return AppColors.orderCancelled;
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Row(
-          children: [
-            Container(
-              width: 8,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _getStatusColor(),
-                borderRadius: BorderRadius.circular(4),
+  Widget _buildActionCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 48,
+                color: AppColors.primary,
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '#${orderId.substring(0, 6)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    storeName,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '₹${amount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor().withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: _getStatusColor(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

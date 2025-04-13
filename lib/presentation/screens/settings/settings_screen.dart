@@ -88,14 +88,12 @@ class SettingsScreen extends StatelessWidget {
 
               if (shouldLogout == true) {
                 try {
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/login',
+                    (route) => false,
+                  );
                   context.read<AuthBloc>().add(const SignOutEvent());
-                  if (context.mounted) {
-                    Navigator.pushNamedAndRemoveUntil(
-                      context,
-                      '/login',
-                      (route) => false,
-                    );
-                  }
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

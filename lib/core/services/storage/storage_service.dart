@@ -16,6 +16,7 @@ class StorageService {
   static const String _fcmTokenKey = 'fcm_token';
   static const String _isProfileCompleteKey = 'is_profile_complete';
   static const String _onboardingCompletedKey = 'onboarding_completed';
+  static const String _onboardingInProgressKey = 'onboarding_in_progress';
 
   SharedPreferences? _prefs;
 
@@ -171,6 +172,16 @@ class StorageService {
   /// Get onboarding completion status
   bool getOnboardingCompletionStatus() {
     return _prefs?.getBool(_onboardingCompletedKey) ?? false;
+  }
+
+  /// Save onboarding in progress flag
+  Future<void> setOnboardingInProgress(bool inProgress) async {
+    await _prefs?.setBool(_onboardingInProgressKey, inProgress);
+  }
+
+  /// Check if onboarding is in progress
+  bool getOnboardingInProgress() {
+    return _prefs?.getBool(_onboardingInProgressKey) ?? false;
   }
 
   /// Clear all stored data

@@ -55,10 +55,17 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
+      listenWhen: (previous, current) {
+        // Only navigate once to prevent flickering
+        return previous is! AuthAuthenticatedState &&
+            previous is! AuthUnauthenticatedState &&
+            previous is! AuthOtpSentState;
+      },
       listener: (context, state) {
         if (state is AuthAuthenticatedState ||
             state is AuthUnauthenticatedState ||
             state is AuthOtpSentState) {
+          debugPrint('SplashScreen: Navigating to AuthWrapper (one time only)');
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const AuthWrapper()),
           );

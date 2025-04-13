@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../../data/repositories/auth_repository_impl.dart';
 import '../../../data/repositories/order_repository_impl.dart';
 import '../../../presentation/blocs/order/order_bloc.dart';
+import '../../../core/services/storage/storage_service.dart';
 
 /// Service for handling Firebase Cloud Messaging
 class FirebaseMessagingService {
@@ -16,6 +17,7 @@ class FirebaseMessagingService {
   final OrderRepositoryImpl _orderRepository;
   final AuthRepositoryImpl _authRepository;
   final OrderBloc _orderBloc;
+  final StorageService _storageService;
 
   // Stream controller for order notifications
   final StreamController<Map<String, dynamic>> _orderNotificationController =
@@ -37,9 +39,11 @@ class FirebaseMessagingService {
     required OrderRepositoryImpl orderRepository,
     required AuthRepositoryImpl authRepository,
     required OrderBloc orderBloc,
+    required StorageService storageService,
   })  : _orderRepository = orderRepository,
         _authRepository = authRepository,
-        _orderBloc = orderBloc;
+        _orderBloc = orderBloc,
+        _storageService = storageService;
 
   /// Initialize the FCM service
   Future<void> initialize() async {
@@ -243,8 +247,17 @@ class FirebaseMessagingService {
   /// Updates token in Firestore
   Future<void> _updateToken(String token) async {
     try {
-      await _authRepository.updateFcmToken(token);
-      debugPrint('FCM token updated successfully');
+      // Get the stored token to compare
+      final storedToken = await _storageService.getFcmToken();
+
+      // Only update if the token has changed
+      if (storedToken != token) {
+        await _authRepository.updateFcmToken(token);
+        await _storageService.saveFcmToken(token);
+        debugPrint('FCM token updated successfully');
+      } else {
+        debugPrint('FCM token unchanged, skipping update');
+      }
     } catch (e) {
       debugPrint('Error updating FCM token: $e');
     }

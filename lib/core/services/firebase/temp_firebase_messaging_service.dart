@@ -28,6 +28,9 @@ class TempFirebaseMessagingService extends FirebaseMessagingService {
     importance: Importance.high,
   );
 
+  // Create a shared instance of StorageService
+  static final StorageService _sharedStorageService = StorageService();
+
   TempFirebaseMessagingService()
       : super(
           orderRepository: OrderRepositoryImpl(
@@ -37,7 +40,7 @@ class TempFirebaseMessagingService extends FirebaseMessagingService {
           authRepository: AuthRepositoryImpl(
             authService: AuthService(),
             firebaseService: FirebaseService(),
-            storageService: StorageService(),
+            storageService: _sharedStorageService,
           ),
           orderBloc: OrderBloc(
             orderRepository: OrderRepositoryImpl(
@@ -49,11 +52,15 @@ class TempFirebaseMessagingService extends FirebaseMessagingService {
               locationService: LocationService(),
             ),
           ),
+          storageService: _sharedStorageService,
         );
 
   @override
   Future<void> initialize() async {
     try {
+      // Initialize StorageService if not already initialized
+      await _sharedStorageService.init();
+
       // Request permission
       await _requestPermission();
 
@@ -108,5 +115,24 @@ class TempFirebaseMessagingService extends FirebaseMessagingService {
     );
 
     await _localNotifications.initialize(initializationSettings);
+  }
+
+  @override
+  Future<String?> refreshToken() async {
+    try {
+      final token = await _firebaseMessaging.getToken();
+      debugPrint('Temp FCM Token (not updating Firestore): $token');
+      return token;
+    } catch (e) {
+      debugPrint('Error getting FCM token: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> _updateToken(String token) async {
+    // Do nothing in temp service to prevent initialization loops
+    debugPrint(
+        'Temp service: token update skipped to prevent initialization loops');
   }
 }
