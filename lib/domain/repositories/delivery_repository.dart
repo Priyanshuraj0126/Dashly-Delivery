@@ -18,6 +18,9 @@ abstract class DeliveryRepository {
   /// Get assigned zone
   Future<Zone?> getAssignedZone();
 
+  /// Get default zone (for MVP with single delivery area)
+  Future<Zone> getDefaultZone();
+
   /// Get active orders for the delivery boy
   Future<List<order_model.Order>> getActiveOrders();
 

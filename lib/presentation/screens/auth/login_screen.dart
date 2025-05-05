@@ -26,6 +26,48 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Add debugging for auth state in initState
+    debugPrint(
+        '[LOGIN SCREEN] Initializing login screen, isOtpSent: ${widget.isOtpSent}');
+
+    // Check if there's a saved verification ID, which could indicate a previous auth attempt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final credentials =
+          context.read<AuthBloc>().storageService?.getCredentials();
+      if (credentials != null &&
+          credentials.containsKey('verificationId') &&
+          credentials.containsKey('phoneNumber')) {
+        debugPrint(
+            '[LOGIN SCREEN] Found saved credentials with verificationId');
+
+        // If we're in release mode and have saved credentials, we can use them
+        if (kReleaseMode) {
+          final verificationId = credentials['verificationId'];
+          final phoneNumber = credentials['phoneNumber'];
+
+          if (verificationId != null && phoneNumber != null) {
+            debugPrint(
+                '[LOGIN SCREEN] Navigating to OTP screen with saved credentials');
+
+            // Add a small delay to ensure the navigation happens after the screen is rendered
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OtpVerificationScreen(
+                      phoneNumber: phoneNumber,
+                      verificationId: verificationId,
+                    ),
+                  ),
+                );
+              }
+            });
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -75,16 +117,26 @@ class _LoginScreenState extends State<LoginScreen> {
         });
 
         if (state is AuthOtpSentState) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpVerificationScreen(
-                phoneNumber: state.phoneNumber,
-                verificationId: state.verificationId,
-              ),
-            ),
-          );
+          debugPrint(
+              '[LOGIN SCREEN] Received AuthOtpSentState, navigating to OTP screen');
+
+          // Add a short delay to avoid navigation issues in release mode
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OtpVerificationScreen(
+                    phoneNumber: state.phoneNumber,
+                    verificationId: state.verificationId,
+                  ),
+                ),
+              );
+            }
+          });
         } else if (state is AuthErrorState) {
+          debugPrint(
+              '[LOGIN SCREEN] Received AuthErrorState: ${state.message}');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),

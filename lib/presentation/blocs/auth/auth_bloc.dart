@@ -66,6 +66,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final StorageService _storageService;
   final UserRepository _userRepository;
 
+  // Add a getter to access the storage service
+  StorageService? get storageService => _storageService;
+
   AuthBloc({
     required AuthService authService,
     required StorageService storageService,
@@ -134,29 +137,66 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       final completer = Completer<void>();
 
+      // Log phone authentication attempt
+      debugPrint(
+          '[AUTH] Authentication attempt with phone: ${event.phoneNumber}. isRelease: $kReleaseMode');
+
       final error = await _authService.signInWithPhoneNumber(
         phoneNumber: event.phoneNumber,
         onCodeSent: (verificationId, resendToken) {
-          debugPrint('OTP sent successfully. VerificationId: $verificationId');
+          debugPrint(
+              '[AUTH] OTP sent successfully. VerificationId: $verificationId, ResendToken: $resendToken');
+
+          // Store verification ID in local storage as a backup
+          _storageService.saveCredentials({
+            'verificationId': verificationId,
+            'phoneNumber': event.phoneNumber,
+          });
+
           if (!emit.isDone) {
             emit(AuthOtpSentState(
               verificationId: verificationId,
               phoneNumber: event.phoneNumber,
             ));
           }
-          completer.complete();
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
         },
         onVerificationFailed: (e) {
-          debugPrint('OTP verification failed: ${e.message}');
+          // Detailed error logging for troubleshooting
+          debugPrint(
+              '[AUTH] OTP verification failed: ${e.message}, Code: ${e.code}');
+          debugPrint('[AUTH] Error details: ${e.stackTrace}');
+
           if (!emit.isDone) {
-            emit(AuthErrorState(e.message ?? 'Verification failed'));
+            String errorMessage = 'Verification failed';
+
+            // Provide specific error messages based on error codes
+            if (e.code == 'invalid-phone-number') {
+              errorMessage =
+                  'The phone number format is incorrect. Please enter a valid number.';
+            } else if (e.code == 'too-many-requests') {
+              errorMessage = 'Too many requests. Please try again later.';
+            } else if (e.code == 'app-not-authorized') {
+              errorMessage =
+                  'App not authorized to use Firebase Authentication with this project.';
+            } else if (e.code == 'quota-exceeded') {
+              errorMessage = 'Quota exceeded. Please try again later.';
+            } else if (e.message != null) {
+              errorMessage = e.message!;
+            }
+
+            emit(AuthErrorState(errorMessage));
           }
-          completer.complete();
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
         },
       );
 
       if (error != null) {
-        debugPrint('Error sending OTP: $error');
+        debugPrint('[AUTH] Error sending OTP: $error');
         if (!emit.isDone) {
           emit(AuthErrorState(error));
         }
@@ -165,7 +205,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       await completer.future;
     } catch (e) {
-      debugPrint('Exception sending OTP: $e');
+      debugPrint('[AUTH] Exception sending OTP: $e');
+      debugPrint('[AUTH] Stack trace: ${StackTrace.current}');
       if (!emit.isDone) {
         emit(AuthErrorState(e.toString()));
       }

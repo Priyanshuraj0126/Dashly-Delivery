@@ -7,9 +7,14 @@ import 'package:provider/provider.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import 'language_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
@@ -64,16 +69,16 @@ class SettingsScreen extends StatelessWidget {
               context.l10n.logout,
               style: const TextStyle(color: Colors.red),
             ),
-            onTap: () async {
-              final shouldLogout = await showDialog<bool>(
+            onTap: () {
+              showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: Text(context.l10n.logout),
+                  title: Text('Confirm Logout'),
                   content: Text('Are you sure you want to logout?'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: Text(context.l10n.cancel),
+                      child: Text('Cancel'),
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(context, true),
@@ -84,27 +89,21 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-              );
+              ).then((confirmed) async {
+                if (confirmed == true) {
+                  final currentContext = context;
 
-              if (shouldLogout == true) {
-                try {
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/login',
-                    (route) => false,
-                  );
-                  context.read<AuthBloc>().add(const SignOutEvent());
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(context.l10n.error),
-                        backgroundColor: Colors.red,
-                      ),
+                  currentContext.read<AuthBloc>().add(SignOutEvent());
+
+                  if (mounted) {
+                    Navigator.pushNamedAndRemoveUntil(
+                      currentContext,
+                      '/login',
+                      (route) => false,
                     );
                   }
                 }
-              }
+              });
             },
           ),
         ],

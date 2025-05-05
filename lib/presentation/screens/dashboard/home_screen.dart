@@ -5,7 +5,6 @@ import '../../../core/constants/app_colors.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/location/location_bloc.dart';
 import '../../blocs/order/order_bloc.dart';
-import '../../widgets/custom_button.dart';
 import '../orders/active_orders_screen.dart';
 import '../orders/order_history_screen.dart';
 import '../earnings/earnings_screen.dart';
@@ -57,8 +56,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final userState = context.read<AuthBloc>().state;
 
     if (userState is AuthAuthenticatedState) {
-      final userId = userState.userId;
-
       // If going on duty, start location updates and check zone
       if (_isOnDuty) {
         context.read<LocationBloc>().add(StartLocationUpdatesEvent());
@@ -141,13 +138,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ).then((shouldLogout) {
                 if (shouldLogout == true) {
                   // First navigate away, then sign out
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    RouteNames.login,
-                    (route) => false,
-                  );
-                  // Then trigger sign out
-                  context.read<AuthBloc>().add(SignOutEvent());
+                  if (mounted) {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      RouteNames.login,
+                      (route) => false,
+                    );
+                    // Then trigger sign out
+                    context.read<AuthBloc>().add(SignOutEvent());
+                  }
                 }
               });
             },

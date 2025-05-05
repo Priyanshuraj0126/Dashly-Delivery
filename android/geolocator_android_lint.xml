@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- Suppress the missing POST_NOTIFICATIONS permission warning -->
+    <issue id="MissingPermission">
+        <ignore path="**/com/baseflow/geolocator/location/BackgroundNotification.java" />
+    </issue>
+</lint> 

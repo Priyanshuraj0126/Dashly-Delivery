@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:async';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/services/firebase/firebase_service.dart';
@@ -528,17 +529,156 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Stream<List<order_model.Order>> listenForNewOrders() {
     try {
-      // Get orders that are waiting for assignment
-      final stream = _firebaseService.collectionStream(
-        AppConstants.ordersCollection,
-        field: 'status',
-        value: 'waiting_for_driver',
+      final controller = StreamController<List<order_model.Order>>();
+
+      void fetchAndAddOrders() async {
+        try {
+          debugPrint('Fetching available orders for delivery');
+          final userId = await _getUserId();
+          if (userId == null) {
+            debugPrint('No user ID available');
+            controller.add([]);
+            return;
+          }
+
+          debugPrint('Fetching document: delivery_boys/$userId');
+          final deliveryBoyDoc = await _firebaseService.getDocument(
+            AppConstants.deliveryBoysCollection,
+            userId,
+          );
+
+          debugPrint('Document exists: ${deliveryBoyDoc.exists}');
+          if (!deliveryBoyDoc.exists) {
+            debugPrint('Delivery boy document does not exist');
+            controller.add([]);
+            return;
+          }
+
+          final deliveryBoyData = deliveryBoyDoc.data() as Map<String, dynamic>;
+          final isOnline = deliveryBoyData['status'] == 'online';
+          debugPrint(
+              'DELIVERY BOY STATUS: ${deliveryBoyData['status']} ${isOnline ? '(MATCH)' : '(NOT MATCH)'}');
+
+          if (!isOnline) {
+            // If not online, don't fetch orders
+            debugPrint('Delivery boy is not online, skipping order fetch');
+            controller.add([]);
+            return;
+          }
+
+          // Use a transaction for more reliable querying
+          final ordersRef =
+              _firebaseService.collection(AppConstants.ordersCollection);
+
+          debugPrint('Running all order queries');
+
+          // Query 1: For orders with availableForDelivery field
+          debugPrint('Query 1: availableForDelivery = true');
+          final orderSnapshot1 = await ordersRef
+              .where('delivery_boy_id', isNull: true)
+              .where('availableForDelivery', isEqualTo: true)
+              .get();
+          debugPrint('Query 1 found ${orderSnapshot1.docs.length} orders');
+
+          // Query 2: For orders with orderStatus field = WAITING_FOR_DRIVER
+          debugPrint('Query 2: orderStatus = WAITING_FOR_DRIVER');
+          final orderSnapshot2 = await ordersRef
+              .where('delivery_boy_id', isNull: true)
+              .where('orderStatus', isEqualTo: 'WAITING_FOR_DRIVER')
+              .get();
+          debugPrint('Query 2 found ${orderSnapshot2.docs.length} orders');
+
+          // Query 3: For orders with status field = WAITING_FOR_DRIVER
+          debugPrint('Query 3: status = WAITING_FOR_DRIVER');
+          final orderSnapshot3 = await ordersRef
+              .where('delivery_boy_id', isNull: true)
+              .where('status', isEqualTo: 'WAITING_FOR_DRIVER')
+              .get();
+          debugPrint('Query 3 found ${orderSnapshot3.docs.length} orders');
+
+          // Query 4: For orders with status field = PLACED
+          debugPrint('Query 4: status = PLACED');
+          final orderSnapshot4 = await ordersRef
+              .where('delivery_boy_id', isNull: true)
+              .where('status', isEqualTo: 'PLACED')
+              .get();
+          debugPrint('Query 4 found ${orderSnapshot4.docs.length} orders');
+
+          // Query 5: For orders with orderStatus field = PLACED
+          debugPrint('Query 5: orderStatus = PLACED');
+          final orderSnapshot5 = await ordersRef
+              .where('delivery_boy_id', isNull: true)
+              .where('orderStatus', isEqualTo: 'PLACED')
+              .get();
+          debugPrint('Query 5 found ${orderSnapshot5.docs.length} orders');
+
+          // Process and deduplicate results
+          final Map<String, order_model.Order> uniqueOrders = {};
+
+          // Combined query results
+          final allDocs = [
+            ...orderSnapshot1.docs,
+            ...orderSnapshot2.docs,
+            ...orderSnapshot3.docs,
+            ...orderSnapshot4.docs,
+            ...orderSnapshot5.docs,
+          ];
+
+          debugPrint('Total docs from all queries: ${allDocs.length}');
+
+          for (final doc in allDocs) {
+            try {
+              // Skip if already processed this order ID
+              if (uniqueOrders.containsKey(doc.id)) continue;
+
+              final order = order_model.Order.fromFirestore(doc);
+              uniqueOrders[order.id] = order;
+              debugPrint(
+                  'FOUND ORDER: ID=${order.id}, Status=${order.status}, OrderStatus=${doc.data()['orderStatus']}, AvailableForDelivery=${doc.data()['availableForDelivery']}');
+
+              // Fetch and print complete document for debugging
+              final orderDetails = await _firebaseService.getDocument(
+                  AppConstants.ordersCollection, order.id);
+              debugPrint('Fetching document: orders/${order.id}');
+              debugPrint('Document exists: ${orderDetails.exists}');
+            } catch (e) {
+              debugPrint('Error parsing order: $e');
+            }
+          }
+
+          // Add to stream if controller is still active
+          debugPrint(
+              'Emitting ${uniqueOrders.values.length} unique orders to stream');
+          if (!controller.isClosed) {
+            controller.add(uniqueOrders.values.toList());
+          } else {
+            debugPrint('Controller is closed, cannot emit orders');
+          }
+        } catch (e) {
+          debugPrint('Error in fetchAndAddOrders: $e');
+          if (!controller.isClosed) {
+            controller.add([]);
+          }
+        }
+      }
+
+      // Fetch immediately
+      fetchAndAddOrders();
+
+      // Setup periodic fetching
+      final timer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => fetchAndAddOrders(),
       );
 
-      return stream.map((snapshot) => snapshot.docs
-          .map((doc) => order_model.Order.fromFirestore(doc))
-          .toList());
+      // Close timer when the stream is closed
+      controller.onCancel = () {
+        timer.cancel();
+      };
+
+      return controller.stream;
     } catch (e) {
+      debugPrint('Error in listenForNewOrders: $e');
       return Stream.value([]);
     }
   }

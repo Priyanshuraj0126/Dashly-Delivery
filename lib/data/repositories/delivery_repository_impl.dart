@@ -518,14 +518,81 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
   @override
   Stream<List<order_model.Order>> getAvailableOrders() {
     try {
-      return _firebaseService
+      debugPrint('Getting available orders checking multiple field patterns');
+
+      // Create a StreamController to manage our custom stream
+      final controller = StreamController<List<order_model.Order>>();
+
+      // Create a list of possible queries based on different field patterns
+      final query1 = _firebaseService
           .collection(AppConstants.ordersCollection)
-          .where('status', isEqualTo: 'waiting_for_driver')
-          .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => order_model.Order.fromFirestore(doc))
-              .toList());
+          .where('availableForDelivery', isEqualTo: true)
+          .where('assignedToDeliveryBoy', isNull: true);
+
+      final query2 = _firebaseService
+          .collection(AppConstants.ordersCollection)
+          .where('orderStatus', isEqualTo: 'WAITING_FOR_DRIVER')
+          .where('deliveryBoyId', isNull: true);
+
+      final query3 = _firebaseService
+          .collection(AppConstants.ordersCollection)
+          .where('status', isEqualTo: 'WAITING_FOR_DRIVER')
+          .where('delivery_boy_id', isNull: true);
+
+      // Helper function to fetch and combine orders
+      Future<void> fetchAndAddOrders() async {
+        try {
+          final results1 = await query1.get();
+          final results2 = await query2.get();
+          final results3 = await query3.get();
+
+          // Process and deduplicate results
+          final Map<String, order_model.Order> uniqueOrders = {};
+
+          for (final doc in [
+            ...results1.docs,
+            ...results2.docs,
+            ...results3.docs
+          ]) {
+            try {
+              final order = order_model.Order.fromFirestore(doc);
+              uniqueOrders[order.id] = order;
+              debugPrint(
+                  'FOUND AVAILABLE ORDER: ID=${order.id}, Status=${order.status}, OrderStatus=${doc.data()['orderStatus']}, AvailableForDelivery=${doc.data()['availableForDelivery']}');
+            } catch (e) {
+              debugPrint('Error parsing order: $e');
+            }
+          }
+
+          // Add to stream if controller is still active
+          if (!controller.isClosed) {
+            controller.add(uniqueOrders.values.toList());
+          }
+        } catch (e) {
+          debugPrint('Error fetching orders: $e');
+          if (!controller.isClosed) {
+            controller.add([]);
+          }
+        }
+      }
+
+      // Fetch immediately
+      fetchAndAddOrders();
+
+      // Setup periodic fetching
+      final timer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => fetchAndAddOrders(),
+      );
+
+      // Close timer when the stream is closed
+      controller.onCancel = () {
+        timer.cancel();
+      };
+
+      return controller.stream;
     } catch (e) {
+      debugPrint('Error getting available orders: $e');
       return Stream.value([]);
     }
   }
@@ -708,8 +775,10 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
   Future<void> startOrderTracking(String orderId) async {
     _currentOrderId = orderId;
 
-    // Start periodic location updates
+    // Cancel any existing timer
     _locationUpdateTimer?.cancel();
+
+    // Start periodic location updates
     _locationUpdateTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _updateDeliveryLocation(),
@@ -781,41 +850,6 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
     return user?.uid;
   }
 
-  Future<bool> _isOrderInDriverZone(order_model.Order order) async {
-    try {
-      final userId = await _getUserId();
-      if (userId == null) return false;
-
-      // Get delivery boy zone
-      final deliveryBoyDoc = await _firebaseService.getDocument(
-        AppConstants.deliveryBoysCollection,
-        userId,
-      );
-
-      if (!deliveryBoyDoc.exists) return false;
-
-      final deliveryBoy = DeliveryBoy.fromFirestore(deliveryBoyDoc);
-      if (deliveryBoy.currentZoneId == null) return false;
-
-      // Check if order's store is in the same zone
-      final storeId = order.storeId;
-      if (storeId == null) return false;
-
-      final storeDoc = await _firebaseService.getDocument(
-        AppConstants.storesCollection,
-        storeId,
-      );
-
-      if (!storeDoc.exists) return false;
-
-      final store = store_model.Store.fromFirestore(storeDoc);
-
-      return store.zoneId == deliveryBoy.currentZoneId;
-    } catch (e) {
-      return false;
-    }
-  }
-
   @override
   Future<List<Zone>> getAvailableZones() async {
     try {
@@ -833,18 +867,21 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
 
   @override
   Stream<List<order_model.Order>> listenForNewOrders() {
-    try {
-      return _firebaseService
-          .collectionStream(
-            AppConstants.ordersCollection,
-            field: 'status',
-            value: 'waiting_for_driver',
-          )
-          .map((snapshot) => snapshot.docs
-              .map((doc) => order_model.Order.fromFirestore(doc))
-              .toList());
-    } catch (e) {
-      return Stream.value([]);
-    }
+    return getAvailableOrders();
+  }
+
+  @override
+  Future<Zone> getDefaultZone() async {
+    return Zone(
+      id: 'default-zone',
+      name: 'All Service Areas',
+      city: 'All Cities',
+      boundaries: const [],
+      activeDeliveryBoys: const [],
+      center: null,
+      radius: null,
+      isActive: true,
+      description: 'Default delivery zone for MVP',
+    );
   }
 }

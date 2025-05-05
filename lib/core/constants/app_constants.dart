@@ -4,7 +4,7 @@ class AppConstants {
   static const String appName = 'Dashly Delivery';
   static const String appVersion = '1.0.0';
   static const int appBuildNumber = 1;
-  static const String packageName = 'com.dashly.delivery';
+  static const String packageName = 'com.hilwitz.dashly_delivery';
 
   // Firestore Collections
   static const String usersCollection = 'users';

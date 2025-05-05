@@ -7,6 +7,7 @@ import '../../core/services/storage/storage_service.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../models/delivery_boy.dart';
 import '../models/user_credentials.dart';
+import 'package:flutter/foundation.dart';
 
 /// Implementation of the AuthRepository interface
 class AuthRepositoryImpl implements AuthRepository {
@@ -67,9 +68,11 @@ class AuthRepositoryImpl implements AuthRepository {
     Completer<bool> completer = Completer<bool>();
 
     try {
+      debugPrint('Attempting to send OTP to: $phoneNumber');
       final error = await _authService.signInWithPhoneNumber(
         phoneNumber: phoneNumber,
         onCodeSent: (verificationId, resendToken) {
+          debugPrint('OTP sent successfully. VerificationId: $verificationId');
           // Save the verification ID for later use
           _storageService.saveCredentials({
             'verificationId': verificationId,
@@ -81,6 +84,7 @@ class AuthRepositoryImpl implements AuthRepository {
           }
         },
         onVerificationFailed: (e) {
+          debugPrint('OTP sending failed: ${e.message}');
           if (!completer.isCompleted) {
             completer.complete(false);
           }
@@ -88,11 +92,13 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       if (error != null) {
+        debugPrint('Error sending OTP: $error');
         return false;
       }
 
       return await completer.future;
     } catch (e) {
+      debugPrint('Exception sending OTP: $e');
       return false;
     }
   }
@@ -146,6 +152,15 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<DeliveryBoy?> signInWithPhone(String phoneNumber) async {
     try {
+      debugPrint('Checking if delivery boy exists for phone: $phoneNumber');
+
+      // Get the user ID first to ensure we have it
+      final userId = _authService.currentUserId;
+      if (userId == null) {
+        debugPrint('Error: No authenticated user ID found');
+        return null;
+      }
+
       // Check if user exists in Firestore
       final querySnapshot = await _firebaseService.getDocumentsWithQuery(
         AppConstants.deliveryBoysCollection,
@@ -154,6 +169,7 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       if (querySnapshot.docs.isNotEmpty) {
+        debugPrint('Existing delivery boy found, retrieving profile');
         final document = querySnapshot.docs.first;
         final user = DeliveryBoy.fromFirestore(document);
 
@@ -166,8 +182,8 @@ class AuthRepositoryImpl implements AuthRepository {
         return user;
       } else {
         // User does not exist in Firestore yet
-        final userId = _authService.currentUserId;
-        if (userId == null) return null;
+        debugPrint(
+            'No existing delivery boy found, creating new profile for ID: $userId');
 
         // Create minimal user entry
         final deliveryBoy = DeliveryBoy.minimal(
@@ -176,15 +192,18 @@ class AuthRepositoryImpl implements AuthRepository {
         );
 
         // Save user to Firestore
+        debugPrint('Saving new delivery boy profile to Firestore');
         await _firebaseService.setDocument(
           AppConstants.deliveryBoysCollection,
           userId,
           deliveryBoy.toFirestore(),
         );
 
+        debugPrint('New delivery boy profile created successfully');
         return deliveryBoy;
       }
     } catch (e) {
+      debugPrint('Error in signInWithPhone: $e');
       return null;
     }
   }

@@ -288,6 +288,9 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   ) async {
     emit(LocationLoadingState());
     try {
+      // MVP modification: Bypass zone assignment checks and create a default zone
+      // Original code commented out
+      /*
       final zone = await _deliveryRepository.getAssignedZone();
       if (zone != null) {
         emit(AssignedZoneLoadedState(zone: zone));
@@ -307,6 +310,12 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       } else {
         emit(const LocationErrorState(message: 'No assigned zone found'));
       }
+      */
+
+      // For MVP, create a default zone covering the entire delivery area
+      // This ensures the delivery person is always considered "in zone"
+      final defaultZone = await _deliveryRepository.getDefaultZone();
+      emit(AssignedZoneLoadedState(zone: defaultZone));
     } catch (e) {
       emit(LocationErrorState(message: 'Error: ${e.toString()}'));
     }

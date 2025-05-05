@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../blocs/auth/auth_bloc.dart';
@@ -35,6 +36,24 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void initState() {
     super.initState();
     _startResendTimer();
+
+    // Log the verification ID and phone number for debugging
+    debugPrint('[OTP SCREEN] Verification screen initialized with:');
+    debugPrint('[OTP SCREEN] Phone: ${widget.phoneNumber}');
+    debugPrint('[OTP SCREEN] VerificationId: ${widget.verificationId}');
+    debugPrint('[OTP SCREEN] isRelease: $kReleaseMode');
+
+    // Store the verification ID and phone number again to ensure it's available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final bloc = context.read<AuthBloc>();
+      if (bloc.storageService != null) {
+        bloc.storageService!.saveCredentials({
+          'verificationId': widget.verificationId,
+          'phoneNumber': widget.phoneNumber,
+        });
+        debugPrint('[OTP SCREEN] Stored credentials in storage service');
+      }
+    });
   }
 
   @override
@@ -78,6 +97,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   void _verifyOtp() {
     if (_otpController.text.length == 6) {
+      debugPrint('[OTP SCREEN] Verifying OTP: ${_otpController.text}');
+      debugPrint('[OTP SCREEN] With verification ID: ${widget.verificationId}');
+
       context.read<AuthBloc>().add(
             VerifyOtpEvent(
               verificationId: widget.verificationId,
@@ -105,27 +127,48 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       ),
       body: BlocListener<AuthBloc, AuthState>(
         listener: (context, state) {
+          debugPrint('[OTP SCREEN] Auth state changed: ${state.runtimeType}');
+
           if (state is AuthLoadingState) {
             // Show loading
+            debugPrint('[OTP SCREEN] Loading state');
           } else if (state is AuthErrorState) {
             // Show error
+            debugPrint('[OTP SCREEN] Error state: ${state.message}');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
                 backgroundColor: AppColors.error,
+                duration: const Duration(seconds: 5),
               ),
             );
 
             // Animate error on OTP field
             _errorController.add(ErrorAnimationType.shake);
+
+            // Clear the OTP field for retry
+            _otpController.clear();
+            setState(() {
+              _isButtonEnabled = false;
+            });
           } else if (state is AuthOtpSentState) {
             // Update verification ID if OTP was resent
+            debugPrint('[OTP SCREEN] New OTP sent: ${state.verificationId}');
+
+            // Store the new verification ID
+            context.read<AuthBloc>().storageService?.saveCredentials({
+              'verificationId': state.verificationId,
+              'phoneNumber': state.phoneNumber,
+            });
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('OTP sent successfully'),
+                content: const Text('OTP sent successfully'),
                 backgroundColor: AppColors.success,
               ),
             );
+          } else if (state is AuthAuthenticatedState) {
+            debugPrint('[OTP SCREEN] Authentication successful');
           }
         },
         child: SafeArea(
@@ -237,6 +280,40 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       );
                     },
                   ),
+
+                  // Add a troubleshooting section for release builds
+                  if (kReleaseMode) ...[
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Having trouble?',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'If you\'re having trouble with the verification process, try these steps:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '1. Make sure you have a stable internet connection\n'
+                      '2. Ensure your phone number is correct\n'
+                      '3. Try closing and reopening the app\n'
+                      '4. Check that you have the latest app version',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

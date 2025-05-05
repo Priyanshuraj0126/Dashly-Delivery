@@ -30,29 +30,31 @@ class TempFirebaseMessagingService extends FirebaseMessagingService {
 
   // Create a shared instance of StorageService
   static final StorageService _sharedStorageService = StorageService();
+  static final FirebaseService _sharedFirebaseService = FirebaseService();
 
   TempFirebaseMessagingService()
       : super(
           orderRepository: OrderRepositoryImpl(
-            firebaseService: FirebaseService(),
+            firebaseService: _sharedFirebaseService,
             messagingService: null,
           ),
           authRepository: AuthRepositoryImpl(
             authService: AuthService(),
-            firebaseService: FirebaseService(),
+            firebaseService: _sharedFirebaseService,
             storageService: _sharedStorageService,
           ),
           orderBloc: OrderBloc(
             orderRepository: OrderRepositoryImpl(
-              firebaseService: FirebaseService(),
+              firebaseService: _sharedFirebaseService,
               messagingService: null,
             ),
             deliveryRepository: DeliveryRepositoryImpl(
-              firebaseService: FirebaseService(),
+              firebaseService: _sharedFirebaseService,
               locationService: LocationService(),
             ),
           ),
           storageService: _sharedStorageService,
+          firebaseService: _sharedFirebaseService,
         );
 
   @override

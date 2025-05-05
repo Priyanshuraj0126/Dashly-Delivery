@@ -44,26 +44,93 @@ class AuthService {
     return expired;
   }
 
-  /// Sign in with phone number
+  /// Sign in with phone number to send OTP
   Future<String?> signInWithPhoneNumber({
     required String phoneNumber,
     required Function(String, int?) onCodeSent,
     required Function(FirebaseAuthException) onVerificationFailed,
   }) async {
     try {
+      debugPrint(
+          '[AUTH SERVICE] Starting phone auth: $phoneNumber, isRelease: $kReleaseMode');
+
+      // Validate phone number format
+      if (!phoneNumber.startsWith('+')) {
+        debugPrint(
+            '[AUTH SERVICE] Phone number does not start with +, adding country code');
+        if (!phoneNumber.startsWith('+91')) {
+          phoneNumber = '+91$phoneNumber';
+        }
+      }
+
+      debugPrint('[AUTH SERVICE] Using final phone number: $phoneNumber');
+
+      // In release mode, add a short delay to ensure Firebase has fully initialized
+      if (kReleaseMode) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
       await _auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          await _auth.signInWithCredential(credential);
+          debugPrint(
+              '[AUTH SERVICE] Auto verification completed for $phoneNumber');
+          try {
+            await _auth.signInWithCredential(credential);
+            debugPrint('[AUTH SERVICE] Auto sign in successful');
+          } catch (e) {
+            debugPrint('[AUTH SERVICE] Error in auto sign in: $e');
+          }
         },
-        verificationFailed: onVerificationFailed,
-        codeSent: onCodeSent,
+        verificationFailed: (FirebaseAuthException error) {
+          debugPrint(
+              '[AUTH SERVICE] Verification failed: ${error.message}, code: ${error.code}');
+
+          // Log additional details in release mode to help diagnose the issue
+          if (kReleaseMode) {
+            debugPrint('[AUTH SERVICE] Error details: ${error.stackTrace}');
+            debugPrint('[AUTH SERVICE] Error tenant ID: ${error.tenantId}');
+            debugPrint('[AUTH SERVICE] Phone number: $phoneNumber');
+          }
+
+          onVerificationFailed(error);
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          debugPrint(
+              '[AUTH SERVICE] Code sent, verificationId: $verificationId, resendToken: $resendToken');
+          onCodeSent(verificationId, resendToken);
+        },
         codeAutoRetrievalTimeout: (String verificationId) {
-          // Handle timeout if needed
+          debugPrint(
+              '[AUTH SERVICE] Auto retrieval timeout for verificationId: $verificationId');
         },
+        // Increase timeout in release mode to give more time
+        timeout: kReleaseMode
+            ? const Duration(seconds: 120)
+            : const Duration(seconds: 60),
       );
       return null;
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+          '[AUTH SERVICE] FirebaseAuthException in signInWithPhoneNumber: ${e.code} - ${e.message}');
+
+      // Handle specific Firebase auth errors
+      switch (e.code) {
+        case 'app-not-authorized':
+          return 'This app is not authorized to use Firebase Authentication with your Firebase project.';
+        case 'captcha-check-failed':
+          return 'reCAPTCHA verification failed, please try again.';
+        case 'invalid-phone-number':
+          return 'The phone number is invalid.';
+        case 'quota-exceeded':
+          return 'SMS quota exceeded. Please try again tomorrow.';
+        case 'user-disabled':
+          return 'This user account has been disabled.';
+        default:
+          return e.message ?? e.toString();
+      }
     } catch (e) {
+      debugPrint('[AUTH SERVICE] General error in signInWithPhoneNumber: $e');
       return e.toString();
     }
   }
@@ -73,17 +140,92 @@ class AuthService {
     String verificationId,
     String otp,
   ) async {
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: otp,
-      );
+    debugPrint(
+        '[AUTH SERVICE] Verifying OTP: $otp for verificationId: $verificationId');
+    debugPrint('[AUTH SERVICE] isRelease: $kReleaseMode');
 
-      return await _auth.signInWithCredential(credential);
-    } catch (e) {
-      debugPrint('Error verifying OTP: $e');
-      return null;
+    int retryCount = 0;
+    const maxRetries = 2;
+
+    Future<UserCredential?> attemptVerification() async {
+      try {
+        // Introduce a small delay in release mode to ensure Firebase is ready
+        if (kReleaseMode) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        debugPrint('[AUTH SERVICE] Creating phone auth credential');
+        final credential = PhoneAuthProvider.credential(
+          verificationId: verificationId,
+          smsCode: otp,
+        );
+
+        debugPrint('[AUTH SERVICE] Signing in with credential');
+        final result = await _auth.signInWithCredential(credential);
+        debugPrint(
+            '[AUTH SERVICE] OTP verification successful. User ID: ${result.user?.uid}');
+
+        // Force refresh the user to ensure we have the latest auth state
+        if (result.user != null) {
+          debugPrint(
+              '[AUTH SERVICE] Reloading user to ensure latest auth state');
+          await result.user!.reload();
+        }
+
+        return result;
+      } on FirebaseAuthException catch (e) {
+        debugPrint(
+            '[AUTH SERVICE] FirebaseAuthException verifying OTP: ${e.code} - ${e.message}');
+
+        // Check if the error is due to invalid verification code
+        if (e.code == 'invalid-verification-code') {
+          debugPrint('[AUTH SERVICE] Invalid verification code entered');
+          return null;
+        } else if (e.code == 'invalid-verification-id') {
+          debugPrint(
+              '[AUTH SERVICE] Invalid verification ID. Session may have expired');
+
+          // In release mode, try waiting longer and retrying if this happens
+          if (kReleaseMode && retryCount < maxRetries) {
+            retryCount++;
+            debugPrint(
+                '[AUTH SERVICE] Retrying verification after delay (attempt $retryCount)');
+            await Future.delayed(const Duration(seconds: 1));
+            return attemptVerification();
+          }
+
+          return null;
+        } else if (e.code == 'session-expired') {
+          debugPrint('[AUTH SERVICE] Verification session expired');
+          return null;
+        } else if (kReleaseMode && retryCount < maxRetries) {
+          // For other errors in release mode, retry a few times
+          retryCount++;
+          debugPrint(
+              '[AUTH SERVICE] Unknown error, retrying verification (attempt $retryCount)');
+          await Future.delayed(const Duration(seconds: 1));
+          return attemptVerification();
+        }
+
+        // For any other error or if we've run out of retries
+        debugPrint('[AUTH SERVICE] Auth error: ${e.code} - ${e.message}');
+        return null;
+      } catch (e) {
+        debugPrint('[AUTH SERVICE] General error verifying OTP: $e');
+
+        if (kReleaseMode && retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              '[AUTH SERVICE] General error, retrying verification (attempt $retryCount)');
+          await Future.delayed(const Duration(seconds: 1));
+          return attemptVerification();
+        }
+
+        return null;
+      }
     }
+
+    return attemptVerification();
   }
 
   /// Sign out the current user

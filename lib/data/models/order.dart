@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Order status enum
 enum OrderStatus {
@@ -121,68 +122,496 @@ class Order {
 
     // Parse order items
     List<OrderItem>? parseItems() {
-      final itemsData = data['items'] as List<dynamic>?;
-      if (itemsData == null) return null;
+      try {
+        final itemsData = data['items'] as List<dynamic>?;
+        if (itemsData == null) return [];
 
-      return itemsData
-          .map((item) => OrderItem.fromMap(item as Map<String, dynamic>))
-          .toList();
+        return itemsData
+            .map((item) => OrderItem.fromMap(item as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        // If error parsing items, return empty list
+        debugPrint('Error parsing order items: $e');
+        return [];
+      }
     }
 
     // Parse rejected by list
     List<String>? parseRejectedBy() {
-      final rejectedByData = data['rejected_by'] as List<dynamic>?;
-      if (rejectedByData == null) return null;
-
-      return rejectedByData.map((id) => id as String).toList();
-    }
-
-    // Parse customer if available
-    Customer? parseCustomer() {
-      if (data['customer'] == null) return null;
-
       try {
-        return Customer.fromMap(data['customer'] as Map<String, dynamic>);
+        final rejectedByData = data['rejected_by'] as List<dynamic>?;
+        if (rejectedByData == null) return null;
+
+        return rejectedByData.map((id) => id as String).toList();
       } catch (e) {
         // If parsing fails, return null
         return null;
       }
     }
 
-    return Order(
-      id: doc.id,
-      customerId: data['customer_id'] as String,
-      vendorId: data['store_id'] as String,
-      deliveryBoyId: data['delivery_boy_id'] as String?,
-      status: data['status'] as String? ?? 'pending',
-      items: parseItems() ?? [],
-      pickupAddress:
-          Address.fromMap(data['pickup_address'] as Map<String, dynamic>),
-      deliveryAddress:
-          Address.fromMap(data['delivery_address'] as Map<String, dynamic>),
-      payment: Payment.fromMap(data['payment'] as Map<String, dynamic>),
-      timestamps:
-          OrderTimestamps.fromMap(data['timestamps'] as Map<String, dynamic>),
-      store: Store.fromMap(data['store'] as Map<String, dynamic>),
-      totalAmount: (data['total_amount'] as num?)?.toDouble() ?? 0.0,
-      specialInstructions: data['special_instructions'] as String?,
-      deliveryBoyLocation:
-          data['delivery_boy_location'] as Map<String, dynamic>?,
-      estimatedTime: data['estimated_time'] as Map<String, dynamic>?,
-      actualTime: data['actual_time'] as Map<String, dynamic>?,
-      ratings: data['ratings'] as Map<String, dynamic>?,
-      issues: data['issues'] as Map<String, dynamic>?,
-      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      customer: parseCustomer(),
-      distance: data['distance'] as double?,
-      deliveryCharges: data['delivery_charges'] as double?,
-      completedAt: data['completed_at'] != null
-          ? DateTime.parse(data['completed_at'] as String)
-          : null,
-      paymentMethod: data['payment_method'] as String?,
-      storeId: data['store_id'] as String?,
-    );
+    // Parse customer if available, with robust error handling
+    Customer? parseCustomer() {
+      try {
+        // First check if there's a customer object
+        if (data['customer'] != null &&
+            data['customer'] is Map<String, dynamic>) {
+          return Customer.fromMap(data['customer'] as Map<String, dynamic>);
+        }
+
+        // If no customer object but we have userId, create a minimal customer
+        if (data['userId'] != null || data['customerId'] != null) {
+          final userId =
+              data['userId'] as String? ?? data['customerId'] as String? ?? '';
+
+          // Use delivery address if available
+          String address = '';
+          if (data['deliveryAddress'] is Map<String, dynamic> &&
+              data['deliveryAddress']['fullAddress'] != null) {
+            address = data['deliveryAddress']['fullAddress'] as String;
+          }
+
+          return Customer(
+            id: userId,
+            name: 'Customer',
+            phoneNumber: '',
+            address: address,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error parsing customer: $e');
+      }
+
+      // Default minimal customer
+      return Customer(
+        id: '',
+        name: 'Customer',
+        phoneNumber: '',
+        address: '',
+      );
+    }
+
+    // Handle different status field names that might be in the document
+    String parseStatus() {
+      try {
+        // First check for 'orderStatus' (new field name)
+        if (data['orderStatus'] != null) {
+          return data['orderStatus'] as String;
+        }
+        // Then check for 'status' (old field name)
+        if (data['status'] != null) {
+          return data['status'] as String;
+        }
+        // Default to 'WAITING_FOR_DRIVER' for new orders from notifications
+        return 'WAITING_FOR_DRIVER';
+      } catch (e) {
+        debugPrint('Error parsing status: $e');
+        return 'WAITING_FOR_DRIVER';
+      }
+    }
+
+    // Parse pickup address with fallback to store address if not available
+    Address parsePickupAddress() {
+      try {
+        // Try to get pickup_address directly
+        if (data['pickup_address'] != null &&
+            data['pickup_address'] is Map<String, dynamic>) {
+          return Address.fromMap(
+              data['pickup_address'] as Map<String, dynamic>);
+        }
+
+        // Try to get address from store
+        if (data['store'] != null &&
+            data['store'] is Map<String, dynamic> &&
+            data['store']['address'] != null &&
+            data['store']['address'] is Map<String, dynamic>) {
+          return Address.fromMap(
+              data['store']['address'] as Map<String, dynamic>);
+        }
+
+        // Try to use location data if available
+        if (data['location'] != null &&
+            data['location'] is Map<String, dynamic>) {
+          // Extract latitude and longitude
+          double latitude = 0.0;
+          double longitude = 0.0;
+
+          if (data['location']['latitude'] != null) {
+            latitude = (data['location']['latitude'] as num).toDouble();
+          }
+
+          if (data['location']['longitude'] != null) {
+            longitude = (data['location']['longitude'] as num).toDouble();
+          }
+
+          return Address(
+            street: '',
+            city: '',
+            state: '',
+            country: '',
+            postalCode: data['pincode'] as String? ?? '',
+            formattedAddress: data['address'] as String? ?? '',
+            location: {'latitude': latitude, 'longitude': longitude},
+          );
+        }
+      } catch (e) {
+        debugPrint('Error parsing pickup address: $e');
+      }
+
+      // Create a placeholder address
+      return Address(
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: '',
+        location: {'latitude': 0.0, 'longitude': 0.0},
+      );
+    }
+
+    // Parse delivery address with fallback to customer address if not available
+    Address parseDeliveryAddress() {
+      try {
+        // First check for delivery_address
+        if (data['delivery_address'] != null &&
+            data['delivery_address'] is Map<String, dynamic>) {
+          return Address.fromMap(
+              data['delivery_address'] as Map<String, dynamic>);
+        }
+
+        // Then check for deliveryAddress
+        if (data['deliveryAddress'] != null &&
+            data['deliveryAddress'] is Map<String, dynamic>) {
+          // Parse from notification format
+          final deliveryData = data['deliveryAddress'] as Map<String, dynamic>;
+
+          Map<String, dynamic> locationMap = {
+            'latitude': 0.0,
+            'longitude': 0.0
+          };
+          if (deliveryData['latitude'] != null &&
+              deliveryData['longitude'] != null) {
+            locationMap = {
+              'latitude': (deliveryData['latitude'] as num).toDouble(),
+              'longitude': (deliveryData['longitude'] as num).toDouble(),
+            };
+          }
+
+          return Address(
+            street: deliveryData['fullAddress'] as String? ?? '',
+            city: '',
+            state: '',
+            country: '',
+            postalCode: deliveryData['pincode'] as String? ?? '',
+            landmark: deliveryData['landmark'] as String?,
+            formattedAddress: deliveryData['fullAddress'] as String?,
+            location: locationMap,
+          );
+        }
+
+        // Check if customer data has address
+        if (data['customer'] != null &&
+            data['customer'] is Map<String, dynamic> &&
+            data['customer']['address'] != null) {
+          // Create address from customer data
+          final customerData = data['customer'] as Map<String, dynamic>;
+          final addressStr = customerData['address'] as String? ?? '';
+
+          return Address(
+            street: addressStr,
+            city: '',
+            state: '',
+            country: '',
+            postalCode: '',
+            formattedAddress: addressStr,
+            location: {'latitude': 0.0, 'longitude': 0.0},
+          );
+        }
+      } catch (e) {
+        debugPrint('Error parsing delivery address: $e');
+      }
+
+      // Create a placeholder address
+      return Address(
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: '',
+        location: {'latitude': 0.0, 'longitude': 0.0},
+      );
+    }
+
+    // Parse store with fallbacks - robust for notification format
+    Store parseStore() {
+      try {
+        // First check if we have a store object
+        if (data['store'] != null && data['store'] is Map<String, dynamic>) {
+          return Store.fromMap(data['store'] as Map<String, dynamic>);
+        }
+
+        // Create from individual fields
+        String storeId = '';
+        String storeName = 'Store';
+
+        if (data['storeId'] != null) {
+          storeId = data['storeId'] as String;
+        } else if (data['store_id'] != null) {
+          storeId = data['store_id'] as String;
+        }
+
+        if (data['storeName'] != null) {
+          storeName = data['storeName'] as String;
+        } else if (data['store_name'] != null) {
+          storeName = data['store_name'] as String;
+        }
+
+        // Create a minimal store
+        return Store(
+          id: storeId,
+          name: storeName,
+          description: '',
+          address: parsePickupAddress(),
+        );
+      } catch (e) {
+        debugPrint('Error parsing store: $e');
+
+        // Fallback to minimal store
+        return Store(
+          id: '',
+          name: 'Store',
+          description: '',
+          address: parsePickupAddress(),
+        );
+      }
+    }
+
+    // Parse payment with fallbacks
+    Payment parsePayment() {
+      try {
+        if (data['payment'] != null &&
+            data['payment'] is Map<String, dynamic>) {
+          return Payment.fromMap(data['payment'] as Map<String, dynamic>);
+        }
+
+        // Get total amount
+        double totalAmount = 0.0;
+        if (data['total'] != null) {
+          totalAmount = (data['total'] as num).toDouble();
+        } else if (data['total_amount'] != null) {
+          totalAmount = (data['total_amount'] as num).toDouble();
+        }
+
+        // Create a minimal payment
+        return Payment(
+          method: data['payment_method'] as String? ?? 'COD',
+          amount: totalAmount,
+          status: data['payment_status'] as String? ?? 'pending',
+        );
+      } catch (e) {
+        debugPrint('Error parsing payment: $e');
+
+        // Fallback payment
+        return Payment(
+          method: 'COD',
+          amount: 0.0,
+          status: 'pending',
+        );
+      }
+    }
+
+    // Parse timestamps with fallbacks
+    OrderTimestamps parseTimestamps() {
+      try {
+        if (data['timestamps'] != null &&
+            data['timestamps'] is Map<String, dynamic>) {
+          return OrderTimestamps.fromMap(
+              data['timestamps'] as Map<String, dynamic>);
+        }
+
+        // Create timestamps from individual fields
+        return OrderTimestamps(
+          created: (data['created_at'] as Timestamp?)?.toDate() ??
+              (data['createdAt'] as Timestamp?)?.toDate() ??
+              (data['created'] as Timestamp?)?.toDate(),
+          assigned: (data['assigned_at'] as Timestamp?)?.toDate() ??
+              (data['assignedAt'] as Timestamp?)?.toDate(),
+          pickedUp: (data['picked_up_at'] as Timestamp?)?.toDate() ??
+              (data['pickedUpAt'] as Timestamp?)?.toDate(),
+          delivered: (data['delivered_at'] as Timestamp?)?.toDate() ??
+              (data['deliveredAt'] as Timestamp?)?.toDate(),
+          completed: (data['completed_at'] as Timestamp?)?.toDate() ??
+              (data['completedAt'] as Timestamp?)?.toDate(),
+          cancelled: (data['cancelled_at'] as Timestamp?)?.toDate() ??
+              (data['cancelledAt'] as Timestamp?)?.toDate(),
+        );
+      } catch (e) {
+        debugPrint('Error parsing timestamps: $e');
+        return OrderTimestamps(
+          created: DateTime.now(),
+        );
+      }
+    }
+
+    // Get customer ID with fallbacks
+    String getCustomerId() {
+      try {
+        if (data['customerId'] != null) return data['customerId'] as String;
+        if (data['customer_id'] != null) return data['customer_id'] as String;
+        if (data['userId'] != null) return data['userId'] as String;
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    // Get vendor ID with fallbacks
+    String getVendorId() {
+      try {
+        if (data['vendorId'] != null) return data['vendorId'] as String;
+        if (data['vendor_id'] != null) return data['vendor_id'] as String;
+        if (data['storeId'] != null) return data['storeId'] as String;
+        if (data['store_id'] != null) return data['store_id'] as String;
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    // Handle different delivery boy ID fields that might be in the document
+    String? parseDeliveryBoyId() {
+      try {
+        // Check for all possible field names
+        if (data['assignedToDeliveryBoy'] != null) {
+          return data['assignedToDeliveryBoy'] as String?;
+        }
+        if (data['delivery_boy_id'] != null) {
+          return data['delivery_boy_id'] as String?;
+        }
+        if (data['deliveryBoyId'] != null) {
+          return data['deliveryBoyId'] as String?;
+        }
+        return null;
+      } catch (e) {
+        debugPrint('Error parsing delivery boy ID: $e');
+        return null;
+      }
+    }
+
+    // Put outside try block to ensure it's used in the order constructor
+    final String? deliveryBoyId = parseDeliveryBoyId();
+
+    // Parse total amount with fallbacks
+    double getTotalAmount() {
+      try {
+        if (data['total'] != null) return (data['total'] as num).toDouble();
+        if (data['totalAmount'] != null) {
+          return (data['totalAmount'] as num).toDouble();
+        }
+        if (data['total_amount'] != null) {
+          return (data['total_amount'] as num).toDouble();
+        }
+        return 0.0;
+      } catch (e) {
+        return 0.0;
+      }
+    }
+
+    // Build the order object with all the parsed data, handling any exceptions
+    try {
+      return Order(
+        id: doc.id,
+        customerId: getCustomerId(),
+        vendorId: getVendorId(),
+        deliveryBoyId: deliveryBoyId,
+        status: parseStatus(),
+        items: parseItems() ?? [],
+        pickupAddress: parsePickupAddress(),
+        deliveryAddress: parseDeliveryAddress(),
+        payment: parsePayment(),
+        timestamps: parseTimestamps(),
+        store: parseStore(),
+        totalAmount: getTotalAmount(),
+        specialInstructions: data['special_instructions'] as String? ??
+            data['specialInstructions'] as String?,
+        deliveryBoyLocation:
+            data['delivery_boy_location'] as Map<String, dynamic>? ??
+                data['deliveryBoyLocation'] as Map<String, dynamic>?,
+        estimatedTime: data['estimated_time'] as Map<String, dynamic>? ??
+            data['estimatedTime'] as Map<String, dynamic>?,
+        actualTime: data['actual_time'] as Map<String, dynamic>? ??
+            data['actualTime'] as Map<String, dynamic>?,
+        ratings: data['ratings'] as Map<String, dynamic>?,
+        issues: data['issues'] as Map<String, dynamic>?,
+        createdAt: (data['created_at'] as Timestamp?)?.toDate() ??
+            (data['createdAt'] as Timestamp?)?.toDate() ??
+            DateTime.now(),
+        updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ??
+            (data['updatedAt'] as Timestamp?)?.toDate() ??
+            DateTime.now(),
+        customer: parseCustomer(),
+        distance: data['distance'] as double?,
+        deliveryCharges: data['delivery_charges'] as double? ??
+            data['deliveryCharges'] as double?,
+        completedAt:
+            data['completed_at'] != null && data['completed_at'] is String
+                ? DateTime.parse(data['completed_at'] as String)
+                : (data['completedAt'] as Timestamp?)?.toDate(),
+        paymentMethod: data['payment_method'] as String? ??
+            data['paymentMethod'] as String?,
+        storeId: data['store_id'] as String? ?? data['storeId'] as String?,
+      );
+    } catch (e) {
+      debugPrint('Error creating order from Firestore: $e');
+
+      // Create a minimal valid order to avoid crashes
+      return Order(
+        id: doc.id,
+        customerId: '',
+        vendorId: '',
+        status: 'WAITING_FOR_DRIVER',
+        items: [],
+        pickupAddress: Address(
+          street: '',
+          city: '',
+          state: '',
+          country: '',
+          postalCode: '',
+          location: {'latitude': 0.0, 'longitude': 0.0},
+        ),
+        deliveryAddress: Address(
+          street: '',
+          city: '',
+          state: '',
+          country: '',
+          postalCode: '',
+          location: {'latitude': 0.0, 'longitude': 0.0},
+        ),
+        payment: Payment(
+          method: 'COD',
+          amount: 0.0,
+          status: 'pending',
+        ),
+        timestamps: OrderTimestamps(
+          created: DateTime.now(),
+        ),
+        store: Store(
+          id: '',
+          name: 'Store',
+          description: '',
+          address: Address(
+            street: '',
+            city: '',
+            state: '',
+            country: '',
+            postalCode: '',
+            location: {'latitude': 0.0, 'longitude': 0.0},
+          ),
+        ),
+        totalAmount: 0.0,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
   }
 
   /// Convert to Firestore document

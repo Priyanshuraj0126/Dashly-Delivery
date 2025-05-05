@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/order.dart' as order_model;
@@ -724,19 +725,63 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
   FutureOr<void> _onStartListeningForNewOrders(
     StartListeningForNewOrdersEvent event,
     Emitter<OrderState> emit,
-  ) {
+  ) async {
     try {
+      debugPrint('Starting to listen for new orders');
+
+      // Cancel existing subscription if any
       _newOrdersSubscription?.cancel();
+
+      // Start with a loading state to indicate we're fetching orders
+      emit(OrderLoadingState());
+
+      // Subscribe to order updates
       _newOrdersSubscription = orderRepository.listenForNewOrders().listen(
         (orders) {
-          emit(NewOrdersStreamState(orders));
+          if (!emit.isDone) {
+            // Debug info - print what orders we're receiving
+            debugPrint('Received ${orders.length} orders from stream');
+
+            for (final order in orders) {
+              debugPrint(
+                  'STREAMING ORDER: ID=${order.id}, Status=${order.status}');
+            }
+
+            // Filter orders to include both WAITING_FOR_DRIVER and PLACED status
+            // Only show orders not assigned to a delivery boy
+            final filteredOrders = orders.where((order) {
+              final isValidStatus = order.status == "WAITING_FOR_DRIVER" ||
+                  order.status == "PLACED";
+              final isNotAssigned =
+                  order.deliveryBoyId == null || order.deliveryBoyId!.isEmpty;
+
+              if (isValidStatus && isNotAssigned) {
+                debugPrint('VALID ORDER FOR UI: ${order.id}');
+                return true;
+              }
+
+              debugPrint(
+                  'FILTERED OUT ORDER: ${order.id}, Status=${order.status}, AssignedTo=${order.deliveryBoyId}');
+              return false;
+            }).toList();
+
+            debugPrint('EMITTING ${filteredOrders.length} ORDERS TO UI');
+            // Always emit the state, even if the list is empty
+            emit(NewOrdersStreamState(filteredOrders));
+          }
         },
         onError: (error) {
-          emit(OrderErrorState(error.toString()));
+          debugPrint('Error in order stream: $error');
+          if (!emit.isDone) {
+            emit(OrderErrorState(error.toString()));
+          }
         },
       );
     } catch (e) {
-      emit(OrderErrorState(e.toString()));
+      debugPrint('Exception in _onStartListeningForNewOrders: $e');
+      if (!emit.isDone) {
+        emit(OrderErrorState(e.toString()));
+      }
     }
   }
 
@@ -751,7 +796,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
   FutureOr<void> _onListenForSpecificOrder(
     ListenForSpecificOrderEvent event,
     Emitter<OrderState> emit,
-  ) {
+  ) async {
     try {
       // Cancel previous subscription if exists
       _orderUpdatesSubscriptions[event.orderId]?.cancel();
@@ -760,14 +805,20 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
       _orderUpdatesSubscriptions[event.orderId] =
           orderRepository.listenForOrderUpdates(event.orderId).listen(
         (order) {
-          emit(OrderUpdatedStreamState(order));
+          if (!emit.isDone) {
+            emit(OrderUpdatedStreamState(order));
+          }
         },
         onError: (error) {
-          emit(OrderErrorState(error.toString()));
+          if (!emit.isDone) {
+            emit(OrderErrorState(error.toString()));
+          }
         },
       );
     } catch (e) {
-      emit(OrderErrorState(e.toString()));
+      if (!emit.isDone) {
+        emit(OrderErrorState(e.toString()));
+      }
     }
   }
 

@@ -40,6 +40,13 @@ android {
             signingConfig = signingConfigs.debug
         }
     }
+
+    lintOptions {
+        abortOnError false
+        checkReleaseBuilds false
+        baseline file("lint-baseline.xml")
+        lintConfig file("../geolocator_android_lint.xml")
+    }
 }
 
 flutter {

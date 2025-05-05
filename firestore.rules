@@ -17,38 +17,99 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
     }
     
-    // Allow all users to read store details and products (public access for browsing)
+    // Allow store creation, reading and management for authenticated users
     match /stores/{storeId} {
       allow read: if true;  // Allow public reading of stores
+      allow create, update, delete: if request.auth != null;  // Allow any authenticated user to create/manage stores
       
-      // Allow nested products to be read publicly
+      // Allow nested products to be read publicly and managed by authenticated users
       match /products/{productId} {
         allow read: if true;  // Allow public reading of products
+        allow create, update, delete: if request.auth != null;  // Allow any authenticated user to manage products
       }
     }
     
     // Allow authenticated users to manage their own orders
     match /orders/{orderId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow read, update: if request.auth != null && (
-        resource.data.userId == request.auth.uid || 
-        resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores ||
-        resource.data.delivery_boy_id == request.auth.uid  // Allow delivery personnel to access their assigned orders
+      // Allow creation of orders
+      allow create: if request.auth != null;
+      
+      // Allow reading orders by authorized parties
+      allow read: if request.auth != null && (
+        // Customer who placed the order
+        request.auth.uid == resource.data.userId || 
+        request.auth.uid == resource.data.customerId ||
+        // Store owner
+        (exists(/databases/$(database)/documents/stores/$(resource.data.storeId)) && 
+         resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores) ||
+        // Assigned delivery person
+        request.auth.uid == resource.data.assignedToDeliveryBoy ||
+        // Any delivery person for unassigned or available orders
+        (exists(/databases/$(database)/documents/delivery_boys/$(request.auth.uid)) && 
+         (resource.data.assignedToDeliveryBoy == null || 
+          resource.data.availableForDelivery == true))
       );
       
-      // Allow delivery personnel to query their orders
-      allow list: if request.auth != null && 
-                   request.query.filters.size() > 0 &&
-                   request.query.filters[0].fieldPath == "delivery_boy_id" && 
-                   request.query.filters[0].value == request.auth.uid;
+      // Allow updating orders
+      allow update: if request.auth != null && (
+        // Customer who placed the order 
+        request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.customerId ||
+        // Store owner
+        (exists(/databases/$(database)/documents/stores/$(resource.data.storeId)) && 
+         resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores) ||
+        // Assigned delivery person
+        request.auth.uid == resource.data.assignedToDeliveryBoy
+      );
+      
+      // Allow delivery personnel to query for orders
+      allow list: if request.auth != null && exists(/databases/$(database)/documents/delivery_boys/$(request.auth.uid));
     }
 
     // Allow delivery boys to manage their own profiles
     match /delivery_boys/{deliveryBoyId} {
-      allow create: if request.auth != null && request.auth.uid == deliveryBoyId;
+      // Allow creation by authenticated users during registration
+      allow create: if request.auth != null;
+      
+      // Allow users to read and update their own profiles
       allow read, update: if request.auth != null && request.auth.uid == deliveryBoyId;
+      
+      // Allow any authenticated user to read basic delivery boy info
       allow get: if request.auth != null;
+      
+      // Allow querying with limits
       allow list: if request.auth != null && request.query.limit <= 10;
+    }
+    
+    // Allow for delivery notifications 
+    match /delivery_notifications/{notificationId} {
+      // Allow creation by any authenticated user (users placing orders)
+      allow create: if request.auth != null;
+      
+      // Allow reading by any authenticated user (delivery app will need this)
+      allow read: if request.auth != null;
+      
+      // Allow updates by authenticated users (delivery app will update status)
+      allow update: if request.auth != null;
+      
+      // Allow querying (list) by any authenticated user
+      allow list: if request.auth != null;
+    }
+    
+    // Allow admin authentication and access
+		match /admins/{userId} {
+  		allow read: if request.auth != null && request.auth.uid == userId;
+  		// Allow admin creation (could be more restricted in production)
+  		allow create: if request.auth != null;
+  		// Allow updates by the admin themselves
+  		allow update: if request.auth != null && request.auth.uid == userId;
+		}
+    
+    // Allow access to deliveryPersons collection for admins
+    match /deliveryPersons/{deliveryPersonId} {
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+      get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == "admin";
     }
   }
 } 

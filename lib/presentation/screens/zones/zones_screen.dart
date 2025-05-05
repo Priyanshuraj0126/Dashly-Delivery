@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../widgets/custom_empty_widget.dart';
-import '../../../domain/models/zone.dart';
-import 'add_zone_screen.dart';
 
+// NOTE: Zone management is disabled for MVP release with single delivery person
+/*
 class ZonesScreen extends StatefulWidget {
   const ZonesScreen({super.key});
 
@@ -199,4 +198,50 @@ class LatLng {
   final double longitude;
 
   const LatLng(this.latitude, this.longitude);
+}
+*/
+
+// MVP replacement for ZonesScreen
+class ZonesScreen extends StatelessWidget {
+  const ZonesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Delivery Area'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.location_on,
+                size: 80,
+                color: AppColors.primary,
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Single Delivery Zone Mode',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'For this MVP release, you are assigned to the entire delivery area.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -46,6 +46,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     // Mark onboarding as in progress
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
       await _storageService.setOnboardingInProgress(true);
       debugPrint('Onboarding in progress flag set to true');
 

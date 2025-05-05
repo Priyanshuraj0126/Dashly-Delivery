@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -8,6 +9,7 @@ import '../../../data/repositories/auth_repository_impl.dart';
 import '../../../data/repositories/order_repository_impl.dart';
 import '../../../presentation/blocs/order/order_bloc.dart';
 import '../../../core/services/storage/storage_service.dart';
+import '../../../core/services/firebase/firebase_service.dart';
 
 /// Service for handling Firebase Cloud Messaging
 class FirebaseMessagingService {
@@ -18,6 +20,7 @@ class FirebaseMessagingService {
   final AuthRepositoryImpl _authRepository;
   final OrderBloc _orderBloc;
   final StorageService _storageService;
+  final FirebaseService _firebaseService;
 
   // Stream controller for order notifications
   final StreamController<Map<String, dynamic>> _orderNotificationController =
@@ -40,10 +43,12 @@ class FirebaseMessagingService {
     required AuthRepositoryImpl authRepository,
     required OrderBloc orderBloc,
     required StorageService storageService,
+    required FirebaseService firebaseService,
   })  : _orderRepository = orderRepository,
         _authRepository = authRepository,
         _orderBloc = orderBloc,
-        _storageService = storageService;
+        _storageService = storageService,
+        _firebaseService = firebaseService;
 
   /// Initialize the FCM service
   Future<void> initialize() async {
@@ -190,8 +195,25 @@ class FirebaseMessagingService {
       if (notificationType == 'new_order' ||
           notificationType == 'order_request') {
         if (data.containsKey('orderId')) {
-          await _fetchOrderDetails(data['orderId'] as String);
-          // Also refresh the active orders list
+          String orderId = data['orderId'] as String;
+
+          // Create a notification document in delivery_notifications collection
+          try {
+            await _firebaseService.addDocument(
+              'delivery_notifications',
+              {
+                'orderId': orderId,
+                'type': notificationType,
+                'created_at': FieldValue.serverTimestamp(),
+                'data': data,
+              },
+            );
+          } catch (e) {
+            debugPrint('Error creating delivery notification: $e');
+          }
+
+          // Fetch order details and refresh active orders
+          await _fetchOrderDetails(orderId);
           _orderBloc.add(FetchActiveOrdersEvent());
         }
       }
@@ -248,7 +270,7 @@ class FirebaseMessagingService {
   Future<void> _updateToken(String token) async {
     try {
       // Get the stored token to compare
-      final storedToken = await _storageService.getFcmToken();
+      final storedToken = _storageService.getFcmToken();
 
       // Only update if the token has changed
       if (storedToken != token) {

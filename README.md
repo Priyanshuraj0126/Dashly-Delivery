@@ -1,67 +1,74 @@
 # Dashly Delivery App
 
-A hyperlocal delivery application for Tier 2/3/4 cities in India. This app serves as the delivery partner platform for the Dashly ecosystem.
+Dashly Delivery is a mobile application for delivery personnel to manage their deliveries, track earnings, and update their profile.
+
+## MVP Release Notes
+
+This version is configured for an MVP internal testing release with the following simplifications:
+
+1. **Single Delivery Person Mode**:
+   - The app now operates in a single delivery area mode
+   - Zone allocation functionality is disabled
+   - All orders are automatically assigned to the single delivery driver
+
+2. **Simplified Delivery Flow**:
+   - Order receiving to delivery process has been streamlined
+   - Location tracking is enabled but zone restriction checks are bypassed
+
+3. **Admin Dashboard Metrics**:
+   - Number of deliveries completed today
+   - Minimum order quantity
+   - Minimum order value
+   - Total revenue
+
+## Getting Started
+
+### Prerequisites
+
+- Flutter SDK (latest stable version)
+- Android Studio / VS Code
+- Firebase project with authentication, Firestore, and Cloud Storage
+
+### Installation
+
+1. Clone the repository
+   ```
+   git clone https://github.com/your-organization/dashly-delivery.git
+   ```
+
+2. Install dependencies
+   ```
+   flutter pub get
+   ```
+
+3. Run the app
+   ```
+   flutter run
+   ```
 
 ## Features
 
-### Authentication
-- Phone number-based OTP authentication
-- Profile setup and verification
-- Document and vehicle registration
-
-### Order Management
-- View and accept new orders
-- Real-time order tracking
-- Order history and statistics
-- Payment collection and verification
-
-### Location Services
-- Zone-based operation
-- Real-time location tracking
+- Authentication with phone number and OTP
+- Order management (view, accept, complete)
+- Earnings tracking
+- Profile management
 - Navigation to pickup and delivery locations
-- Zone adherence monitoring
+- Notifications for new orders
 
-### Earnings and Analytics
-- Daily, weekly, and monthly earnings reports
-- Order performance metrics
-- Delivery statistics and insights
+## Architecture
 
-## Technical Specifications
+The app follows a Clean Architecture approach:
 
-### Architecture
+- **Data layer**: Repository implementations, data sources, models
+- **Domain layer**: Entities, repository interfaces, use cases
+- **Presentation layer**: BLoC state management, UI components, screens
+
+## Technologies
+
+- Flutter for cross-platform mobile development
+- Firebase for backend services (Auth, Firestore, Storage)
 - BLoC pattern for state management
-- Repository pattern for data access
-- Service-oriented approach for core functionalities
-
-### Backend Integration
-- Firebase Authentication for secure login
-- Firestore for real-time data synchronization
-- Firebase Cloud Messaging for push notifications
-- Firebase Storage for document and image uploads
-
-### Maps and Location
-- Google Maps integration for navigation
-- Geolocator for precise location tracking
-- Geofencing for zone-based operations
-
-### Offline Support
-- Local data caching for offline operation
-- Automatic synchronization when back online
-- Reduced data usage for low connectivity areas
-
-## Development Setup
-
-### Prerequisites
-- Flutter SDK (2.17.0 or higher)
-- Dart SDK (2.17.0 or higher)
-- Android Studio / VS Code
-- Firebase project setup
-
-### Getting Started
-1. Clone the repository
-2. Run `flutter pub get` to install dependencies
-3. Configure Firebase (add your own `google-services.json` / `GoogleService-Info.plist` files)
-4. Run `flutter run` to launch the app
+- Google Maps for location and navigation
 
 ## Localization
 The app supports multiple languages:

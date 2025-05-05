@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter/foundation.dart';
 
 import 'core/constants/app_colors.dart';
 import 'core/services/auth/auth_service.dart';
@@ -100,7 +101,37 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // In release mode, set longer timeouts and retry logic for Firebase initialization
+  if (kReleaseMode) {
+    debugPrint(
+        '[MAIN] Running in release mode, applying release-specific settings');
+
+    // Add a short delay to ensure device is ready for Firebase initialization
+    await Future.delayed(const Duration(milliseconds: 500));
+  } else {
+    debugPrint('[MAIN] Running in debug mode');
+  }
+
+  try {
+    debugPrint('[MAIN] Initializing Firebase...');
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+    debugPrint('[MAIN] Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('[MAIN] Error initializing Firebase: $e');
+
+    // In release mode, retry Firebase initialization after a delay
+    if (kReleaseMode) {
+      debugPrint('[MAIN] Retrying Firebase initialization after delay');
+      await Future.delayed(const Duration(seconds: 2));
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
+    } else {
+      rethrow;
+    }
+  }
+
   final prefs = await SharedPreferences.getInstance();
 
   // Initialize services
@@ -156,6 +187,7 @@ Future<void> main() async {
     authRepository: authRepository,
     orderBloc: orderBloc,
     storageService: storageService,
+    firebaseService: firebaseService,
   );
   await firebaseMessagingService.initialize();
 
