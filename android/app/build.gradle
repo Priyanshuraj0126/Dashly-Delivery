@@ -31,6 +31,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -51,4 +52,18 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Add the dependencies for Firebase Authentication
+    implementation 'com.google.firebase:firebase-auth:21.1.0'
+    
+    // Add SafetyNet API for phone auth verification
+    implementation 'com.google.android.gms:play-services-safetynet:17.0.0'
+    
+    // Add Play Integrity API for phone auth verification in newer Android versions
+    implementation 'com.google.android.play:integrity:1.1.0'
+    
+    // Support for multidex
+    implementation 'androidx.multidex:multidex:2.0.1'
 }

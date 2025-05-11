@@ -211,6 +211,39 @@ class UserRepository {
     }
   }
 
+  /// Check if a user's profile is complete
+  Future<bool> isProfileComplete(String userId) async {
+    try {
+      final profile = await getProfile(userId);
+      if (profile == null) return false;
+
+      // Check if profile is marked as complete
+      if (profile['isProfileComplete'] == true) {
+        // Double check that all required fields are present
+        return profile.containsKey('name') &&
+            profile['name'] != null &&
+            profile['name'].toString().trim().isNotEmpty &&
+            profile.containsKey('email') &&
+            profile['email'] != null &&
+            profile['email'].toString().trim().isNotEmpty &&
+            profile.containsKey('address') &&
+            profile['address'] != null &&
+            profile['address'].toString().trim().isNotEmpty &&
+            profile.containsKey('vehicleType') &&
+            profile['vehicleType'] != null &&
+            profile['vehicleType'].toString().trim().isNotEmpty &&
+            profile.containsKey('vehicleNumber') &&
+            profile['vehicleNumber'] != null &&
+            profile['vehicleNumber'].toString().trim().isNotEmpty;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('Error checking profile completion status: $e');
+      return false;
+    }
+  }
+
   /// Stream user profile changes
   Stream<Map<String, dynamic>?> streamProfile(String userId) {
     return _firebaseService.documentStream(_collection, userId).map((doc) {

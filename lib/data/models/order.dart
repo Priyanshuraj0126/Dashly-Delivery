@@ -55,6 +55,14 @@ class Order {
   final String? paymentMethod; // Payment method used
   final String? storeId; // Store ID
 
+  // Add getters for financial calculations
+  double get subtotal =>
+      items.fold(0, (sum, item) => sum + (item.price * item.quantity));
+  double get deliveryFee => deliveryCharges ?? 0.0;
+  double get discount =>
+      0.0; // Default to 0, update if you have a discount field
+  double get amount => totalAmount; // Use totalAmount as the final amount
+
   Order({
     required this.id,
     required this.customerId,
@@ -742,6 +750,14 @@ class OrderItem {
   final Map<String, dynamic>? options;
   final Map<String, dynamic>? addons;
 
+  // Add getter for variation
+  String? get variation {
+    if (options != null && options!.isNotEmpty) {
+      return options!.entries.map((e) => "${e.key}: ${e.value}").join(", ");
+    }
+    return null;
+  }
+
   const OrderItem({
     required this.id,
     required this.name,
@@ -1031,6 +1047,10 @@ class Store {
   final Map<String, dynamic>? categories;
   final Map<String, dynamic>? settings;
 
+  // Add getters for latitude and longitude
+  double get latitude => location?['latitude'] as double? ?? 0.0;
+  double get longitude => location?['longitude'] as double? ?? 0.0;
+
   const Store({
     required this.id,
     required this.name,
@@ -1137,6 +1157,11 @@ class Customer {
   final String address;
   final String? email;
   final String? profilePicture;
+  final Map<String, dynamic>? location;
+
+  // Add getters for latitude and longitude
+  double get latitude => location?['latitude'] as double? ?? 0.0;
+  double get longitude => location?['longitude'] as double? ?? 0.0;
 
   const Customer({
     required this.id,
@@ -1145,6 +1170,7 @@ class Customer {
     required this.address,
     this.email,
     this.profilePicture,
+    this.location,
   });
 
   /// Create a Customer from a map
@@ -1156,6 +1182,7 @@ class Customer {
       address: map['address'] as String,
       email: map['email'] as String?,
       profilePicture: map['profile_picture'] as String?,
+      location: map['location'] as Map<String, dynamic>?,
     );
   }
 
@@ -1168,6 +1195,7 @@ class Customer {
       'address': address,
       'email': email,
       'profile_picture': profilePicture,
+      'location': location,
     };
   }
 
@@ -1179,6 +1207,7 @@ class Customer {
     String? address,
     String? email,
     String? profilePicture,
+    Map<String, dynamic>? location,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -1187,6 +1216,7 @@ class Customer {
       address: address ?? this.address,
       email: email ?? this.email,
       profilePicture: profilePicture ?? this.profilePicture,
+      location: location ?? this.location,
     );
   }
 }

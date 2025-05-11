@@ -10,9 +10,7 @@ import 'otp_verification_screen.dart';
 
 /// Login screen for phone number authentication
 class LoginScreen extends StatefulWidget {
-  final bool isOtpSent;
-
-  const LoginScreen({super.key, this.isOtpSent = false});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -26,48 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-
-    // Add debugging for auth state in initState
-    debugPrint(
-        '[LOGIN SCREEN] Initializing login screen, isOtpSent: ${widget.isOtpSent}');
-
-    // Check if there's a saved verification ID, which could indicate a previous auth attempt
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final credentials =
-          context.read<AuthBloc>().storageService?.getCredentials();
-      if (credentials != null &&
-          credentials.containsKey('verificationId') &&
-          credentials.containsKey('phoneNumber')) {
-        debugPrint(
-            '[LOGIN SCREEN] Found saved credentials with verificationId');
-
-        // If we're in release mode and have saved credentials, we can use them
-        if (kReleaseMode) {
-          final verificationId = credentials['verificationId'];
-          final phoneNumber = credentials['phoneNumber'];
-
-          if (verificationId != null && phoneNumber != null) {
-            debugPrint(
-                '[LOGIN SCREEN] Navigating to OTP screen with saved credentials');
-
-            // Add a small delay to ensure the navigation happens after the screen is rendered
-            Future.delayed(const Duration(milliseconds: 300), () {
-              if (mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => OtpVerificationScreen(
-                      phoneNumber: phoneNumber,
-                      verificationId: verificationId,
-                    ),
-                  ),
-                );
-              }
-            });
-          }
-        }
-      }
-    });
+    debugPrint('[LOGIN SCREEN] Initializing login screen');
   }
 
   @override

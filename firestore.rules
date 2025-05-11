@@ -59,7 +59,10 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/stores/$(resource.data.storeId)) && 
          resource.data.storeId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ownedStores) ||
         // Assigned delivery person
-        request.auth.uid == resource.data.assignedToDeliveryBoy
+        request.auth.uid == resource.data.assignedToDeliveryBoy ||
+        // Allow delivery personnel to accept unassigned orders
+        (exists(/databases/$(database)/documents/delivery_boys/$(request.auth.uid)) && 
+         (resource.data.assignedToDeliveryBoy == null || resource.data.assignedToDeliveryBoy == ""))
       );
       
       // Allow delivery personnel to query for orders

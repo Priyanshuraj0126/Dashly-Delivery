@@ -240,18 +240,21 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
       await _deliveryRepository
           .updateLocation(_locationService.positionToGeoPoint(event.position));
 
+      // Comment out for MVP as user is always in the default zone.
+      /*
       // Check if the user is in their assigned zone
-      final assignedZone = await _deliveryRepository.getAssignedZone();
+      final assignedZone = await _deliveryRepository.getAssignedZone(); 
       if (assignedZone != null) {
         final isInZone = assignedZone.containsLocation(
             _locationService.positionToGeoPoint(event.position));
         if (!isInZone) {
           emit(OutsideZoneState(
             location: _locationService.positionToGeoPoint(event.position),
-            zoneId: assignedZone.id,
+            zoneId: assignedZone.id, 
           ));
         }
       }
+      */
     } catch (e) {
       // Silent error, don't emit anything
     }
@@ -263,19 +266,18 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   ) async {
     emit(LocationLoadingState());
     try {
-      final isInZone = await _deliveryRepository.isLocationWithinZone(
-          event.location, event.zoneId);
-      if (!isInZone) {
+      // MVP Change: Always use default zone logic
+      final defaultZone = await _deliveryRepository.getDefaultZone();
+      final isInDefaultZone = defaultZone.containsLocation(event.location);
+
+      if (!isInDefaultZone) {
+        // This should ideally not be hit due to modified containsLocation
         emit(OutsideZoneState(
           location: event.location,
-          zoneId: event.zoneId,
+          zoneId: defaultZone.id,
         ));
       } else {
-        // Get the zone details
-        final zone = await _deliveryRepository.getZoneById(event.zoneId);
-        if (zone != null) {
-          emit(AssignedZoneLoadedState(zone: zone));
-        }
+        emit(AssignedZoneLoadedState(zone: defaultZone));
       }
     } catch (e) {
       emit(LocationErrorState(message: 'Error: ${e.toString()}'));
@@ -327,8 +329,11 @@ class LocationBloc extends Bloc<LocationEvent, LocationState> {
   ) async {
     emit(LocationLoadingState());
     try {
-      final zones = await _deliveryRepository.getAvailableZones();
-      emit(ZonesLoadedState(zones: zones));
+      // MVP Change: Return only the default zone
+      // final zones = await _deliveryRepository.getAvailableZones(); // Original call
+      final defaultZone =
+          await _deliveryRepository.getDefaultZone(); // MVP Change
+      emit(ZonesLoadedState(zones: [defaultZone])); // MVP Change
     } catch (e) {
       emit(LocationErrorState(message: 'Error: ${e.toString()}'));
     }

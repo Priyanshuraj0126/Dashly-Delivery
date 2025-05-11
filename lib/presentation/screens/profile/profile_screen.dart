@@ -144,14 +144,34 @@ class ProfileScreen extends StatelessWidget {
             child: CustomButton(
               text: 'Logout',
               onPressed: () {
-                // First navigate away, then sign out
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
-                // Then trigger sign out
-                context.read<AuthBloc>().add(SignOutEvent());
+                // Show confirmation dialog before logging out
+                showDialog(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Logout'),
+                    content: const Text('Are you sure you want to logout?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(dialogContext, true); // Close dialog
+                        },
+                        child: const Text(
+                          'Logout',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).then((shouldLogout) {
+                  if (shouldLogout == true) {
+                    // Dispatch SignOutEvent. AuthWrapper will handle navigation.
+                    context.read<AuthBloc>().add(SignOutEvent());
+                  }
+                });
               },
             ),
           ),

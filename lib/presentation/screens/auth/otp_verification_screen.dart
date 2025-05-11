@@ -31,29 +31,28 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   bool _isResendEnabled = false;
   int _resendTimer = 30;
   Timer? _timer;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _startResendTimer();
 
-    // Log the verification ID and phone number for debugging
     debugPrint('[OTP SCREEN] Verification screen initialized with:');
     debugPrint('[OTP SCREEN] Phone: ${widget.phoneNumber}');
     debugPrint('[OTP SCREEN] VerificationId: ${widget.verificationId}');
-    debugPrint('[OTP SCREEN] isRelease: $kReleaseMode');
 
-    // Store the verification ID and phone number again to ensure it's available
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final bloc = context.read<AuthBloc>();
-      if (bloc.storageService != null) {
-        bloc.storageService!.saveCredentials({
-          'verificationId': widget.verificationId,
-          'phoneNumber': widget.phoneNumber,
-        });
-        debugPrint('[OTP SCREEN] Stored credentials in storage service');
-      }
-    });
+    // REMOVED: Redundant credential saving. AuthBloc._onSendOtp handles this.
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   final bloc = context.read<AuthBloc>();
+    //   if (bloc.storageService != null) {
+    //     bloc.storageService!.saveCredentials({
+    //       'verificationId': widget.verificationId,
+    //       'phoneNumber': widget.phoneNumber,
+    //     });
+    //     debugPrint('[OTP SCREEN] Stored credentials in storage service');
+    //   }
+    // });
   }
 
   @override
@@ -96,7 +95,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   }
 
   void _verifyOtp() {
-    if (_otpController.text.length == 6) {
+    if (_otpController.text.length == 6 && !_isLoading) {
       debugPrint('[OTP SCREEN] Verifying OTP: ${_otpController.text}');
       debugPrint('[OTP SCREEN] With verification ID: ${widget.verificationId}');
 
@@ -129,11 +128,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         listener: (context, state) {
           debugPrint('[OTP SCREEN] Auth state changed: ${state.runtimeType}');
 
-          if (state is AuthLoadingState) {
-            // Show loading
-            debugPrint('[OTP SCREEN] Loading state');
-          } else if (state is AuthErrorState) {
-            // Show error
+          if (mounted) {
+            setState(() {
+              _isLoading = state is AuthLoadingState;
+            });
+          }
+
+          if (state is AuthErrorState) {
             debugPrint('[OTP SCREEN] Error state: ${state.message}');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -142,25 +143,20 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 duration: const Duration(seconds: 5),
               ),
             );
-
-            // Animate error on OTP field
             _errorController.add(ErrorAnimationType.shake);
-
-            // Clear the OTP field for retry
             _otpController.clear();
-            setState(() {
-              _isButtonEnabled = false;
-            });
+            if (mounted) {
+              setState(() {
+                _isButtonEnabled = false;
+              });
+            }
           } else if (state is AuthOtpSentState) {
-            // Update verification ID if OTP was resent
             debugPrint('[OTP SCREEN] New OTP sent: ${state.verificationId}');
-
-            // Store the new verification ID
-            context.read<AuthBloc>().storageService?.saveCredentials({
-              'verificationId': state.verificationId,
-              'phoneNumber': state.phoneNumber,
-            });
-
+            // REMOVED: Redundant credential saving. AuthBloc._onSendOtp handles this after resend.
+            // context.read<AuthBloc>().storageService?.saveCredentials({
+            //   'verificationId': state.verificationId,
+            //   'phoneNumber': state.phoneNumber,
+            // });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('OTP sent successfully'),
@@ -169,6 +165,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             );
           } else if (state is AuthAuthenticatedState) {
             debugPrint('[OTP SCREEN] Authentication successful');
+            // Navigation is handled by AuthWrapper
           }
         },
         child: SafeArea(
@@ -269,16 +266,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   const SizedBox(height: 40),
 
                   // Verify Button
-                  BlocBuilder<AuthBloc, AuthState>(
-                    builder: (context, state) {
-                      return CustomButton(
-                        text: 'Verify',
-                        onPressed: _isButtonEnabled ? _verifyOtp : _doNothing,
-                        isLoading: state is AuthLoadingState,
-                        width: double.infinity,
-                        height: 52,
-                      );
-                    },
+                  CustomButton(
+                    text: 'Verify OTP',
+                    onPressed: (_isButtonEnabled && !_isLoading)
+                        ? _verifyOtp
+                        : _doNothing,
+                    isLoading: _isLoading,
+                    width: double.infinity,
+                    height: 52,
                   ),
 
                   // Add a troubleshooting section for release builds

@@ -125,4 +125,13 @@ class AppConstants {
   static const String mapsApiKey = 'YOUR_MAPS_API_KEY';
   static const String supportEmail = 'support@dashly.com';
   static const String supportPhone = '+919876543210';
+
+  // Add standardized field name constants
+  static const String fieldStatus = 'status';
+  static const String fieldOrderStatus = 'orderStatus';
+  static const String fieldDeliveryBoyId = 'delivery_boy_id';
+  static const String fieldAssignedToDeliveryBoy = 'assignedToDeliveryBoy';
+  static const String fieldAvailableForDelivery = 'availableForDelivery';
+  static const String fieldCreatedAt = 'createdAt';
+  static const String fieldUpdatedAt = 'updatedAt';
 }

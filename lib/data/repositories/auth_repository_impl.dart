@@ -64,19 +64,21 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<bool> sendOtp(String phoneNumber) async {
+  Future<bool> sendOtp(String phoneNumber, {int? resendToken}) async {
     Completer<bool> completer = Completer<bool>();
 
     try {
       debugPrint('Attempting to send OTP to: $phoneNumber');
       final error = await _authService.signInWithPhoneNumber(
         phoneNumber: phoneNumber,
+        forceResendingToken: resendToken,
         onCodeSent: (verificationId, resendToken) {
           debugPrint('OTP sent successfully. VerificationId: $verificationId');
-          // Save the verification ID for later use
+          // Save the verification ID and resend token for later use
           _storageService.saveCredentials({
             'verificationId': verificationId,
             'phoneNumber': phoneNumber,
+            if (resendToken != null) 'resendToken': resendToken,
           });
 
           if (!completer.isCompleted) {
@@ -85,6 +87,31 @@ class AuthRepositoryImpl implements AuthRepository {
         },
         onVerificationFailed: (e) {
           debugPrint('OTP sending failed: ${e.message}');
+
+          // For debug mode, we'll allow the auth flow to continue even with verification errors
+          // This helps in development when Play Integrity checks might fail
+          if (!kReleaseMode &&
+              (e.code == 'missing-client-identifier' ||
+                  e.message?.contains('Play Integrity') == true ||
+                  e.message?.contains('reCAPTCHA') == true)) {
+            debugPrint(
+                'Debug mode detected with verification error. Creating temporary verification.');
+
+            // In debug only: create a fake verification ID to allow testing the flow
+            // DO NOT do this in production
+            _storageService.saveCredentials({
+              'verificationId':
+                  'debug-mode-verification-id-${DateTime.now().millisecondsSinceEpoch}',
+              'phoneNumber': phoneNumber,
+              'isDebugVerification': true,
+            });
+
+            if (!completer.isCompleted) {
+              completer.complete(true);
+            }
+            return;
+          }
+
           if (!completer.isCompleted) {
             completer.complete(false);
           }

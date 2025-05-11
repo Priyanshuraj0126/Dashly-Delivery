@@ -47,8 +47,14 @@ abstract class DeliveryRepository {
   /// Complete order pickup
   Future<bool> completeOrderPickup(String orderId);
 
+  /// Mark order as arrived at pickup location (store)
+  Future<bool> markAsArrivedAtPickup(String orderId);
+
   /// Start order delivery
   Future<bool> startOrderDelivery(String orderId);
+
+  /// Mark order as arrived at customer's delivery location
+  Future<bool> markAsArrivedAtDeliveryLocation(String orderId);
 
   /// Complete order delivery
   Future<bool> completeOrderDelivery(String orderId);

@@ -169,6 +169,7 @@ Future<void> main() async {
     authService: authService,
     storageService: storageService,
     userRepository: userRepository,
+    authRepository: authRepository,
   );
 
   final locationBloc = LocationBloc(

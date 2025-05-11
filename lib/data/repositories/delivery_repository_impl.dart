@@ -371,9 +371,45 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
           'status_updated_at': firestore.FieldValue.serverTimestamp(),
         },
       );
-
+      await _notifyStatusUpdate(
+          orderId, AppConstants.orderStatusPickedUp, orderDoc.data() ?? {});
       return true;
     } catch (e) {
+      debugPrint('Error completing order pickup: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> markAsArrivedAtPickup(String orderId) async {
+    try {
+      final userId = await _getUserId();
+      if (userId == null) return false;
+
+      final orderDoc = await _firebaseService.getDocument(
+          AppConstants.ordersCollection, orderId);
+      if (!orderDoc.exists ||
+          (orderDoc.data()?['delivery_boy_id'] != userId &&
+              orderDoc.data()?['assignedToDeliveryBoy'] != userId)) {
+        debugPrint(
+            'Order not found or not assigned to this delivery boy for markAsArrivedAtPickup.');
+        return false;
+      }
+
+      await _firebaseService.updateDocument(
+        AppConstants.ordersCollection,
+        orderId,
+        {
+          'status': AppConstants.orderStatusArrivedAtPickup,
+          'arrived_at_pickup_at': firestore.FieldValue.serverTimestamp(),
+          'status_updated_at': firestore.FieldValue.serverTimestamp(),
+        },
+      );
+      await _notifyStatusUpdate(orderId,
+          AppConstants.orderStatusArrivedAtPickup, orderDoc.data() ?? {});
+      return true;
+    } catch (e) {
+      debugPrint('Error marking as arrived at pickup: $e');
       return false;
     }
   }
@@ -410,6 +446,40 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
 
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> markAsArrivedAtDeliveryLocation(String orderId) async {
+    try {
+      final userId = await _getUserId();
+      if (userId == null) return false;
+
+      final orderDoc = await _firebaseService.getDocument(
+          AppConstants.ordersCollection, orderId);
+      if (!orderDoc.exists ||
+          (orderDoc.data()?['delivery_boy_id'] != userId &&
+              orderDoc.data()?['assignedToDeliveryBoy'] != userId)) {
+        debugPrint(
+            'Order not found or not assigned to this delivery boy for markAsArrivedAtDeliveryLocation.');
+        return false;
+      }
+
+      await _firebaseService.updateDocument(
+        AppConstants.ordersCollection,
+        orderId,
+        {
+          'status': AppConstants.orderStatusArrivedAtDelivery,
+          'arrived_at_delivery_at': firestore.FieldValue.serverTimestamp(),
+          'status_updated_at': firestore.FieldValue.serverTimestamp(),
+        },
+      );
+      await _notifyStatusUpdate(orderId,
+          AppConstants.orderStatusArrivedAtDelivery, orderDoc.data() ?? {});
+      return true;
+    } catch (e) {
+      debugPrint('Error marking as arrived at delivery location: $e');
       return false;
     }
   }
@@ -883,5 +953,60 @@ class DeliveryRepositoryImpl implements DeliveryRepository {
       isActive: true,
       description: 'Default delivery zone for MVP',
     );
+  }
+
+  Future<void> _notifyStatusUpdate(
+      String orderId, String status, Map<String, dynamic> orderData) async {
+    try {
+      final String title = 'Order Update';
+      String body = 'Your order status has been updated to $status.';
+
+      // Customize message based on status
+      switch (status) {
+        case AppConstants.orderStatusOnTheWayToPickup:
+          body = 'Your delivery partner is on the way to the store.';
+          break;
+        case AppConstants.orderStatusArrivedAtPickup:
+          body = 'Your delivery partner has arrived at the store.';
+          break;
+        case AppConstants.orderStatusPickedUp:
+          body = 'Your order has been picked up and is on its way!';
+          break;
+        case AppConstants.orderStatusOutForDelivery:
+          body = 'Your order is out for delivery.';
+          break;
+        case AppConstants.orderStatusArrivedAtDelivery:
+          body = 'Your delivery partner has arrived at your location.';
+          break;
+        case AppConstants.orderStatusDelivered:
+          body =
+              'Your order has been delivered. Thank you for choosing Dashly!';
+          break;
+        case AppConstants.orderStatusAssigned:
+          body = 'A delivery partner has been assigned to your order: $orderId';
+          break;
+      }
+
+      final String customerId =
+          orderData['customerId'] ?? orderData['userId'] ?? '';
+      final String storeId =
+          orderData['storeId'] ?? orderData['vendorId'] ?? '';
+
+      // Notify Customer
+      if (customerId.isNotEmpty) {
+        // This part would typically involve fetching the customer's FCM token and sending a notification.
+        // For simplicity in this example, we'll just print.
+        debugPrint('Notifying customer $customerId: $title - $body');
+        // Example: await _sendFcmNotification(customerId, title, body, {'orderId': orderId, 'status': status});
+      }
+
+      // Notify Store (Optional - if stores need real-time updates on these statuses)
+      if (storeId.isNotEmpty) {
+        debugPrint('Notifying store $storeId: $title - $body');
+        // Example: await _sendFcmNotification(storeId, title, body, {'orderId': orderId, 'status': status});
+      }
+    } catch (e) {
+      debugPrint('Error in _notifyStatusUpdate: $e');
+    }
   }
 }

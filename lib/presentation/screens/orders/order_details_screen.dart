@@ -3,8 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../blocs/order/order_bloc.dart';
 import '../../widgets/custom_button.dart';
+import '../../../data/models/order.dart' as order_model;
+import '../../../data/models/user.dart' as user_model_ns;
+import '../../../data/models/store.dart' as store_model_ns;
 
 class OrderDetailsScreen extends StatefulWidget {
   final String orderId;
@@ -27,7 +31,9 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         .read<OrderBloc>()
         .add(FetchOrderDetailsEvent(orderId: widget.orderId));
     // Listen for changes to this specific order
-    context.read<OrderBloc>().add(ListenForSpecificOrderEvent(widget.orderId));
+    context
+        .read<OrderBloc>()
+        .add(ListenForSpecificOrderEvent(orderId: widget.orderId));
   }
 
   @override
@@ -48,16 +54,39 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Future<void> _openMap(double latitude, double longitude) async {
-    final Uri launchUri = Uri(
-      scheme: 'https',
-      host: 'www.google.com',
-      path: '/maps/dir/',
-      queryParameters: {
-        'api': '1',
-        'destination': '$latitude,$longitude',
-      },
-    );
-    await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+    try {
+      final Uri launchUri = Uri(
+        scheme: 'https',
+        host: 'www.google.com',
+        path: '/maps/dir/',
+        queryParameters: {
+          'api': '1',
+          'destination': '$latitude,$longitude',
+        },
+      );
+
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open maps'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening maps: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -134,11 +163,20 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
-  Widget _buildOrderDetails(BuildContext context, dynamic order) {
-    // Extract order status
+  Widget _buildOrderDetails(BuildContext context, order_model.Order order) {
     final orderStatus = order.status.toLowerCase();
 
+    final paymentMethodDisplay = order.paymentMethod ?? 'N/A';
+    final paymentStatusString = order.payment.status;
+    final paymentStatusDisplay = (paymentStatusString is String
+            ? paymentStatusString
+            : (paymentStatusString as dynamic)?.name) ??
+        (order.paymentMethod?.toLowerCase() == 'cod' ? 'Pending' : 'Paid');
+    final specialInstructionsDisplay = order.specialInstructions ?? 'N/A';
+    final landmarkDisplay = order.deliveryAddress.landmark ?? 'N/A';
+
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -211,14 +249,18 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                   const Divider(height: 24),
                   _buildInfoRow('Items', '${order.items.length} items'),
                   const Divider(height: 24),
-                  _buildInfoRow('Payment Method', order.paymentMethod),
+                  _buildInfoRow('Payment Method', paymentMethodDisplay),
                   const Divider(height: 24),
-                  _buildInfoRow('Payment Status', order.paymentStatus),
-                  if (order.paymentMethod.toLowerCase() == 'cash') ...[
+                  _buildInfoRow('Payment Status', paymentStatusDisplay),
+                  if (order.paymentMethod?.toLowerCase() == 'cash' ||
+                      order.paymentMethod?.toLowerCase() == 'cod') ...[
                     const Divider(height: 24),
-                    _buildInfoRow('Amount to Collect',
-                        '₹${order.amount.toStringAsFixed(2)}'),
+                    _buildInfoRow('Total Amount',
+                        '₹${order.totalAmount.toStringAsFixed(2)}'),
                   ],
+                  const Divider(height: 24),
+                  _buildInfoRow(
+                      'Special Instructions', specialInstructionsDisplay),
                 ],
               ),
             ),
@@ -275,7 +317,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              order.store.address,
+                              order.store.address.toString(),
                               style: TextStyle(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,
@@ -290,7 +332,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                   CustomButton(
                     text: 'Call Store',
                     onPressed: () {
-                      _makePhoneCall(order.store.phoneNumber);
+                      // TODO: Implement fetching full store details to get phone
+                      // For now, this button does nothing or could be disabled.
+                      // _makePhoneCall(order.store.phone ?? ''); // order.store (from order.dart) has no 'phone'
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text(
+                                  'Store phone not available in current order data.')),
+                        );
+                      }
                     },
                     icon: Icons.call,
                     isOutlined: true,
@@ -335,16 +386,22 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildInfoRow('Name', order.customer.name),
+                  _buildInfoRow('Name', order.customer.name ?? 'N/A'),
                   const Divider(height: 24),
-                  _buildInfoRow('Phone', order.customer.phoneNumber),
+                  _buildInfoRow('Phone', order.customer.phoneNumber ?? 'N/A'),
                   const Divider(height: 24),
-                  _buildInfoRow('Address', order.customer.address),
+                  _buildInfoRow('Address',
+                      order.deliveryAddress.formattedAddress ?? 'N/A'),
+                  if (order.deliveryAddress.landmark != null &&
+                      order.deliveryAddress.landmark!.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    _buildInfoRow('Landmark', order.deliveryAddress.landmark!),
+                  ],
                   const SizedBox(height: 16),
                   CustomButton(
                     text: 'Call Customer',
                     onPressed: () {
-                      _makePhoneCall(order.customer.phoneNumber);
+                      _makePhoneCall(order.customer.phoneNumber ?? '');
                     },
                     icon: Icons.call,
                     isOutlined: true,
@@ -354,10 +411,14 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                   CustomButton(
                     text: 'Navigate to Customer',
                     onPressed: () {
-                      _openMap(
-                        order.customer.latitude,
-                        order.customer.longitude,
-                      );
+                      // Get delivery address location instead of customer location
+                      final latitude = order.deliveryAddress
+                              .location['latitude'] as double? ??
+                          0.0;
+                      final longitude = order.deliveryAddress
+                              .location['longitude'] as double? ??
+                          0.0;
+                      _openMap(latitude, longitude);
                     },
                     icon: Icons.directions,
                     width: double.infinity,
@@ -416,9 +477,10 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                                     color: AppColors.textPrimary,
                                   ),
                                 ),
-                                if (item.variation != null)
+                                if (item.variation != null &&
+                                    item.variation!.isNotEmpty)
                                   Text(
-                                    item.variation,
+                                    item.variation!,
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: AppColors.textSecondary,
@@ -438,7 +500,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
                   const Divider(),
                   const SizedBox(height: 8),
                   Row(
@@ -533,11 +595,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
           const SizedBox(height: 24),
 
-          // Action Buttons based on order status
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: _buildActionButtons(context, order, orderStatus),
-          ),
+          _buildActionButtons(context, order),
 
           const SizedBox(height: 32),
         ],
@@ -545,147 +603,139 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
+  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                  fontSize: 16,
+                  color: valueColor ?? AppColors.textPrimary,
+                  fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildActionButtons(
-      BuildContext context, dynamic order, String status) {
-    // Handle different status with appropriate action buttons
-    switch (status) {
-      case 'accepted':
-        return Column(
-          children: [
-            CustomButton(
-              text: 'Mark as Picked Up',
-              onPressed: () {
-                context.read<OrderBloc>().add(
-                      MarkAsPickedUpEvent(orderId: order.id),
-                    );
-              },
-              width: double.infinity,
-            ),
-            const SizedBox(height: 12),
-            CustomButton(
-              text: 'Report Issue',
-              onPressed: () {
-                _showReportIssueDialog(order.id);
-              },
-              isOutlined: true,
-              width: double.infinity,
-            ),
-          ],
-        );
+  Widget _buildActionButtons(BuildContext context, order_model.Order order) {
+    List<Widget> buttons = [];
+    String currentStatus = order.status.toLowerCase();
+    final String orderId = order.id;
 
-      case 'picked up':
-        return Column(
-          children: [
-            CustomButton(
-              text: 'Mark as Out for Delivery',
-              onPressed: () {
-                context.read<OrderBloc>().add(
-                      MarkAsOutForDeliveryEvent(orderId: order.id),
-                    );
-              },
-              width: double.infinity,
-            ),
-            const SizedBox(height: 12),
-            CustomButton(
-              text: 'Update Estimated Time',
-              onPressed: () {
-                _showUpdateEtaDialog(order.id);
-              },
-              isOutlined: true,
-              width: double.infinity,
-            ),
-          ],
-        );
-
-      case 'out for delivery':
-        return Column(
-          children: [
-            CustomButton(
-              text: 'Mark as Delivered',
-              onPressed: () {
-                context.read<OrderBloc>().add(
-                      MarkAsDeliveredEvent(orderId: order.id),
-                    );
-              },
-              width: double.infinity,
-            ),
-            const SizedBox(height: 12),
-            CustomButton(
-              text: 'Update Estimated Time',
-              onPressed: () {
-                _showUpdateEtaDialog(order.id);
-              },
-              isOutlined: true,
-              width: double.infinity,
-            ),
-          ],
-        );
-
-      case 'delivered':
-        if (order.paymentMethod.toLowerCase() == 'cash' &&
-            order.paymentStatus.toLowerCase() != 'confirmed') {
-          return CustomButton(
-            text: 'Confirm Cash Collection',
-            onPressed: () {
-              _showConfirmCashDialog(order.id, order.amount);
-            },
-            width: double.infinity,
-          );
-        } else if (order.paymentMethod.toLowerCase() == 'online' &&
-            order.paymentStatus.toLowerCase() != 'verified') {
-          return CustomButton(
-            text: 'Verify Online Payment',
-            onPressed: () {
-              context.read<OrderBloc>().add(
-                    VerifyOnlinePaymentEvent(orderId: order.id),
-                  );
-            },
-            width: double.infinity,
-          );
-        } else {
-          return CustomButton(
-            text: 'Complete Order',
-            onPressed: () {
-              context.read<OrderBloc>().add(
-                    CompleteOrderEvent(orderId: order.id),
-                  );
-            },
-            width: double.infinity,
-          );
-        }
-
-      default:
-        return const SizedBox.shrink();
+    Widget paddedButton(
+        {required String text,
+        required VoidCallback onPressed,
+        Color? backgroundColor}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: CustomButton(
+          text: text,
+          onPressed: onPressed,
+          backgroundColor: backgroundColor,
+        ),
+      );
     }
+
+    if (currentStatus == AppConstants.orderStatusAssigned.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Start Pickup Journey',
+        onPressed: () {
+          context
+              .read<OrderBloc>()
+              .add(StartPickupJourneyEvent(orderId: orderId));
+        },
+      ));
+    } else if (currentStatus ==
+        AppConstants.orderStatusOnTheWayToPickup.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Arrived at Store',
+        onPressed: () {
+          context.read<OrderBloc>().add(ArrivedAtStoreEvent(orderId: orderId));
+        },
+      ));
+    } else if (currentStatus ==
+        AppConstants.orderStatusArrivedAtPickup.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Confirm & Pick Up Order',
+        onPressed: () {
+          context.read<OrderBloc>().add(MarkAsPickedUpEvent(orderId: orderId));
+        },
+      ));
+    } else if (currentStatus ==
+        AppConstants.orderStatusPickedUp.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Start Delivery to Customer',
+        onPressed: () {
+          context
+              .read<OrderBloc>()
+              .add(MarkAsOutForDeliveryEvent(orderId: orderId));
+        },
+      ));
+    } else if (currentStatus ==
+        AppConstants.orderStatusOutForDelivery.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Arrived at Customer',
+        onPressed: () {
+          context
+              .read<OrderBloc>()
+              .add(ArrivedAtCustomerEvent(orderId: orderId));
+        },
+      ));
+    } else if (currentStatus ==
+        AppConstants.orderStatusArrivedAtDelivery.toLowerCase()) {
+      buttons.add(paddedButton(
+        text: 'Confirm Delivery',
+        onPressed: () {
+          context.read<OrderBloc>().add(
+              MarkAsDeliveredEvent(orderId: orderId, handedOverDirectly: true));
+        },
+      ));
+    } else if (currentStatus ==
+            AppConstants.orderStatusDelivered.toLowerCase() ||
+        currentStatus == AppConstants.orderStatusCompleted.toLowerCase()) {
+      buttons.add(Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+            child: Text(
+                currentStatus == AppConstants.orderStatusDelivered.toLowerCase()
+                    ? 'Order Delivered'
+                    : 'Order Completed',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.success))),
+      ));
+    }
+
+    final String cancelledStatus =
+        order_model.OrderStatus.cancelled.name.toLowerCase();
+    final String failedStatus =
+        order_model.OrderStatus.failed.name.toLowerCase();
+
+    if (buttons.isEmpty &&
+        currentStatus != AppConstants.orderStatusDelivered.toLowerCase() &&
+        currentStatus != AppConstants.orderStatusCompleted.toLowerCase() &&
+        currentStatus != cancelledStatus &&
+        currentStatus != failedStatus) {
+      buttons.add(Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+            child: Text('No actions available for status: ${order.status}',
+                style: TextStyle(color: AppColors.textSecondary),
+                textAlign: TextAlign.center)),
+      ));
+    }
+    return Column(children: buttons);
   }
 
   Color _getStatusColor(String status) {
@@ -705,210 +755,5 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       default:
         return AppColors.textSecondary;
     }
-  }
-
-  void _showReportIssueDialog(String orderId) {
-    final TextEditingController issueController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Report an Issue'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: issueController,
-                decoration: const InputDecoration(
-                  hintText: 'Describe the issue',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (issueController.text.isNotEmpty) {
-                  Navigator.pop(context);
-                  context.read<OrderBloc>().add(
-                        ReportOrderIssueEvent(
-                          orderId: orderId,
-                          issue: issueController.text,
-                          description: issueController.text,
-                        ),
-                      );
-                }
-              },
-              child: Text(
-                'Submit',
-                style: TextStyle(color: AppColors.primary),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showUpdateEtaDialog(String orderId) {
-    int selectedMinutes = 15;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Update Estimated Time'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Select estimated delivery time:'),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildEtaOption(10, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                      _buildEtaOption(15, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                      _buildEtaOption(20, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildEtaOption(30, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                      _buildEtaOption(45, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                      _buildEtaOption(60, selectedMinutes, (value) {
-                        setState(() => selectedMinutes = value);
-                      }),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    context.read<OrderBloc>().add(
-                          UpdateEstimatedTimeEvent(
-                            orderId: orderId,
-                            minutes: selectedMinutes,
-                          ),
-                        );
-                  },
-                  child: Text(
-                    'Update',
-                    style: TextStyle(color: AppColors.primary),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildEtaOption(
-      int minutes, int selectedMinutes, Function(int) onSelected) {
-    final bool isSelected = minutes == selectedMinutes;
-
-    return GestureDetector(
-      onTap: () => onSelected(minutes),
-      child: Container(
-        margin: const EdgeInsets.all(4),
-        width: 80,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.divider,
-          ),
-        ),
-        child: Column(
-          children: [
-            Text(
-              '$minutes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              'mins',
-              style: TextStyle(
-                fontSize: 12,
-                color: isSelected ? Colors.white70 : AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showConfirmCashDialog(String orderId, double amount) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirm Cash Collection'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Did you collect ₹${amount.toStringAsFixed(2)} in cash from the customer?',
-                style: TextStyle(fontSize: 16),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.read<OrderBloc>().add(
-                      ConfirmCashCollectionEvent(
-                        orderId: orderId,
-                        amount: amount,
-                      ),
-                    );
-              },
-              child: Text(
-                'Confirm',
-                style: TextStyle(color: AppColors.success),
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 }

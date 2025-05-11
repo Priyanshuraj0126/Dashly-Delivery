@@ -9,7 +9,6 @@ import '../orders/active_orders_screen.dart';
 import '../orders/order_history_screen.dart';
 import '../earnings/earnings_screen.dart';
 import '../profile/profile_screen.dart';
-import '../../../config/routes/route_names.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,29 +20,39 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isOnDuty = false;
 
-  // Changed from instance to static variable to persist across widget rebuilds
-  static bool _hasCheckedAuth = false;
-
   @override
   void initState() {
     super.initState();
 
     // Only start listening for orders when the screen loads
     context.read<OrderBloc>().add(FetchActiveOrdersEvent());
+
+    // Load initial duty status
+    _loadDutyStatus();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  Future<void> _loadDutyStatus() async {
+    try {
+      // For MVP, default to online status
+      setState(() {
+        _isOnDuty = true;
+      });
 
-    // Check authentication only once across all instances of HomeScreen
-    if (!_hasCheckedAuth) {
-      debugPrint(
-          'Performing initial auth check on HomeScreen (first time only)');
-      context.read<AuthBloc>().add(CheckAuthStatusEvent());
-      _hasCheckedAuth = true;
-    } else {
-      debugPrint('Skipping redundant auth check on HomeScreen');
+      // Update status in Firebase
+      final userState = context.read<AuthBloc>().state;
+      if (userState is AuthAuthenticatedState) {
+        // Set status to online for MVP
+        context
+            .read<OrderBloc>()
+            .add(UpdateDeliveryBoyStatusEvent(status: 'online'));
+
+        // Start location updates, fetch assigned zone, and start listening for orders
+        context.read<LocationBloc>().add(StartLocationUpdatesEvent());
+        context.read<LocationBloc>().add(FetchAssignedZoneEvent());
+        context.read<OrderBloc>().add(StartListeningForNewOrdersEvent());
+      }
+    } catch (e) {
+      debugPrint('Error loading duty status: $e');
     }
   }
 
@@ -56,6 +65,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final userState = context.read<AuthBloc>().state;
 
     if (userState is AuthAuthenticatedState) {
+      // Update status in Firebase
+      final newStatus = _isOnDuty ? 'online' : 'offline';
+      context
+          .read<OrderBloc>()
+          .add(UpdateDeliveryBoyStatusEvent(status: newStatus));
+
       // If going on duty, start location updates and check zone
       if (_isOnDuty) {
         context.read<LocationBloc>().add(StartLocationUpdatesEvent());
@@ -115,20 +130,21 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () {
-              // Show confirmation dialog
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: Text('Logout'),
-                  content: Text('Are you sure you want to logout?'),
+                  title: const Text('Logout'),
+                  content: const Text('Are you sure you want to logout?'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: Text('Cancel'),
+                      child: const Text('Cancel'),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text(
+                      onPressed: () {
+                        Navigator.pop(context, true); // Close dialog first
+                      },
+                      child: const Text(
                         'Logout',
                         style: TextStyle(color: Colors.red),
                       ),
@@ -137,16 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ).then((shouldLogout) {
                 if (shouldLogout == true) {
-                  // First navigate away, then sign out
-                  if (mounted) {
-                    Navigator.pushNamedAndRemoveUntil(
-                      context,
-                      RouteNames.login,
-                      (route) => false,
-                    );
-                    // Then trigger sign out
-                    context.read<AuthBloc>().add(SignOutEvent());
-                  }
+                  // Dispatch SignOutEvent. AuthWrapper will handle navigation to LoginScreen.
+                  context.read<AuthBloc>().add(SignOutEvent());
                 }
               });
             },

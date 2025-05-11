@@ -4,67 +4,19 @@ import 'package:equatable/equatable.dart';
 import '../../../core/services/auth/auth_service.dart';
 import '../../../core/services/storage/storage_service.dart';
 import '../../../data/repositories/user_repository.dart';
+import '../../../data/models/user_credentials.dart';
+import '../../../domain/repositories/auth_repository.dart';
 import 'package:flutter/foundation.dart';
 
 part 'auth_event.dart';
 part 'auth_state.dart';
-
-abstract class AuthEvent extends Equatable {
-  const AuthEvent();
-
-  @override
-  List<Object?> get props => [];
-}
-
-class CompleteOnboardingEvent extends AuthEvent {
-  final String name;
-  final String email;
-  final String address;
-  final String vehicleType;
-  final String vehicleNumber;
-  final String bankAccount;
-  final String ifscCode;
-  final String aadharNumber;
-  final String panNumber;
-  final String drivingLicense;
-
-  const CompleteOnboardingEvent({
-    required this.name,
-    required this.email,
-    required this.address,
-    required this.vehicleType,
-    required this.vehicleNumber,
-    required this.bankAccount,
-    required this.ifscCode,
-    required this.aadharNumber,
-    required this.panNumber,
-    required this.drivingLicense,
-  });
-
-  @override
-  List<Object?> get props => [
-        name,
-        email,
-        address,
-        vehicleType,
-        vehicleNumber,
-        bankAccount,
-        ifscCode,
-        aadharNumber,
-        panNumber,
-        drivingLicense,
-      ];
-}
-
-class ForceProfileIncompleteEvent extends AuthEvent {
-  const ForceProfileIncompleteEvent();
-}
 
 /// BLoC for handling authentication state and operations
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthService _authService;
   final StorageService _storageService;
   final UserRepository _userRepository;
+  final AuthRepository _authRepository;
 
   // Add a getter to access the storage service
   StorageService? get storageService => _storageService;
@@ -73,9 +25,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     required AuthService authService,
     required StorageService storageService,
     required UserRepository userRepository,
+    required AuthRepository authRepository,
   })  : _authService = authService,
         _storageService = storageService,
         _userRepository = userRepository,
+        _authRepository = authRepository,
         super(const AuthInitialState()) {
     on<CheckAuthStatusEvent>(_onCheckAuthStatus);
     on<SendOtpEvent>(_onSendOtp);
@@ -131,26 +85,38 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     SendOtpEvent event,
     Emitter<AuthState> emit,
   ) async {
-    debugPrint('Sending OTP to: ${event.phoneNumber}');
-    emit(const AuthLoadingState());
+    final completer = Completer<void>();
+
+    if (emit.isDone) return;
+    emit(AuthLoadingState());
 
     try {
-      final completer = Completer<void>();
-
-      // Log phone authentication attempt
       debugPrint(
           '[AUTH] Authentication attempt with phone: ${event.phoneNumber}. isRelease: $kReleaseMode');
 
+      // Check for resend token if we have one stored
+      int? resendToken;
+      final credentials = _storageService.getCredentials();
+      if (credentials != null && credentials.containsKey('resendToken')) {
+        final storedToken = credentials['resendToken'];
+        if (storedToken is int) {
+          resendToken = storedToken;
+          debugPrint('[AUTH] Using stored resend token: $resendToken');
+        }
+      }
+
       final error = await _authService.signInWithPhoneNumber(
         phoneNumber: event.phoneNumber,
-        onCodeSent: (verificationId, resendToken) {
+        forceResendingToken: resendToken,
+        onCodeSent: (verificationId, newResendToken) {
           debugPrint(
-              '[AUTH] OTP sent successfully. VerificationId: $verificationId, ResendToken: $resendToken');
+              '[AUTH] OTP sent successfully. VerificationId: $verificationId, ResendToken: $newResendToken');
 
           // Store verification ID in local storage as a backup
           _storageService.saveCredentials({
             'verificationId': verificationId,
             'phoneNumber': event.phoneNumber,
+            if (newResendToken != null) 'resendToken': newResendToken,
           });
 
           if (!emit.isDone) {
@@ -217,84 +183,77 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     VerifyOtpEvent event,
     Emitter<AuthState> emit,
   ) async {
+    // Ensure current state is AuthOtpSentState to get verificationId
+    if (state is! AuthOtpSentState) {
+      // If not in AuthOtpSentState, perhaps OTP was entered unexpectedly.
+      // Emit an error or a specific state indicating this.
+      // For now, let's assume this path shouldn't be hit if UI flow is correct.
+      emit(const AuthErrorState(
+          'OTP verification attempted in an invalid state.'));
+      return;
+    }
+    final currentState = state as AuthOtpSentState;
+    final verificationId = currentState.verificationId;
+
+    if (emit.isDone) return;
+    emit(AuthLoadingState());
+
     try {
-      emit(const AuthLoadingState());
-      debugPrint('Verifying OTP...');
+      // Debug mode verification bypass
+      final credentials = _storageService.getCredentials();
+      final isDebugVerification = credentials?['isDebugVerification'] == true;
 
-      final userCredential = await _authService.verifyOtp(
-        event.verificationId,
-        event.otp,
-      );
+      if (!kReleaseMode && isDebugVerification) {
+        debugPrint('[AUTH] Using debug mode verification bypass');
+        await Future.delayed(const Duration(seconds: 1));
+        final debugUserId = 'debug-${DateTime.now().millisecondsSinceEpoch}';
+        await _storageService.saveUserId(debugUserId);
+        await _storageService.saveAuthToken('debug-token');
+        String phoneNumber =
+            credentials?['phoneNumber'] as String? ?? 'debug_phone';
+        if (credentials != null && credentials.containsKey('phoneNumber')) {
+          phoneNumber = credentials['phoneNumber'] as String;
+          await _storageService.savePhoneNumber(phoneNumber);
+        }
+        final userCredentials = UserCredentials(
+          userId: debugUserId,
+          phoneNumber: phoneNumber,
+          token: 'debug-token',
+          tokenExpiryTime: DateTime.now().add(const Duration(days: 30)),
+          isProfileComplete: false, // Debug users start with incomplete profile
+        );
+        await _authRepository.saveCredentials(userCredentials);
+        await _storageService.updateLastActiveTimestamp();
 
-      if (userCredential == null || userCredential.user == null) {
-        emit(const AuthErrorState('Failed to verify OTP'));
+        // For debug bypass, directly call _checkUserProfile to ensure consistent state emission
+        await _checkUserProfile(debugUserId);
         return;
       }
 
-      final userId = userCredential.user!.uid;
-      debugPrint('OTP verified successfully. User ID: $userId');
+      // Normal production verification flow
+      final userCredential = await _authService.verifyOtp(
+        verificationId,
+        event.otp,
+      ); // Changed from _authRepository.verifyOtp to _authService.verifyOtp based on _authService.signInWithPhoneNumber
 
-      // Save auth data first
-      await _storageService.saveUserId(userId);
-      await _storageService
-          .savePhoneNumber(userCredential.user!.phoneNumber ?? '');
+      if (userCredential != null && userCredential.user != null) {
+        final userId = userCredential.user!.uid;
+        // Save essential details from Firebase user if needed (e.g., phone number)
+        // This might already be handled by _authService or _authRepository wrappers
+        // For now, assume userId is the key outcome here.
 
-      // Wait for Firebase Auth state to be fully updated
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      try {
-        // Now try to get the user profile
-        final userProfile = await _userRepository.getProfile(userId);
-        debugPrint('User profile fetched: ${userProfile != null}');
-
-        // Check if this is a new user or an existing user
-        final bool isNewUser =
-            userProfile?['createdAt'] == userProfile?['updatedAt'];
-        debugPrint('Is new user: $isNewUser');
-
-        // For new users, ensure profile is marked as incomplete
-        if (isNewUser) {
-          debugPrint(
-              'New user detected, ensuring profile is marked as incomplete');
-          await _storageService.saveProfileCompletionStatus(false);
-
-          // Update the Firebase profile to ensure it's marked as incomplete
-          await _userRepository.updateProfile(userId, {
-            'isProfileComplete': false,
-            'phoneNumber': userCredential.user!.phoneNumber ?? '',
-          });
-
-          // Emit authenticated state with isProfileComplete = false for new users
-          emit(AuthAuthenticatedState(
-            isProfileComplete: false,
-            userId: userId,
-            phoneNumber: userCredential.user!.phoneNumber ?? '',
-          ));
-        } else {
-          // For existing users, use the profile completion status from database
-          final bool isProfileComplete =
-              userProfile?['isProfileComplete'] ?? false;
-          debugPrint(
-              'Existing user with profile completion status: $isProfileComplete');
-
-          emit(AuthAuthenticatedState(
-            isProfileComplete: isProfileComplete,
-            userId: userId,
-            phoneNumber: userCredential.user!.phoneNumber ?? '',
-          ));
+        // After successful verification, call _checkUserProfile to determine the correct state
+        await _checkUserProfile(userId);
+      } else {
+        if (!emit.isDone) {
+          emit(const AuthErrorState('Invalid OTP. Please try again.'));
         }
-      } catch (e) {
-        debugPrint('Error getting profile after OTP verification: $e');
-        // If profile fetch fails, force to onboarding for safety
-        emit(AuthAuthenticatedState(
-          isProfileComplete: false,
-          userId: userId,
-          phoneNumber: userCredential.user!.phoneNumber ?? '',
-        ));
       }
     } catch (e) {
-      debugPrint('Error verifying OTP: $e');
-      emit(AuthErrorState(e.toString()));
+      debugPrint('[AUTH] OTP verification error: $e');
+      if (!emit.isDone) {
+        emit(AuthErrorState('Verification failed: ${e.toString()}'));
+      }
     }
   }
 

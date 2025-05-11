@@ -21,6 +21,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _isNavigating = false;
   late StorageService _storageService;
 
+  // Step states for visual error indication
+  List<StepState> _stepStates = List.filled(4, StepState.indexed);
+
   // Form controllers
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -32,6 +35,74 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _aadharNumberController = TextEditingController();
   final _panNumberController = TextEditingController();
   final _drivingLicenseController = TextEditingController();
+
+  // Validator functions
+  String? _validateNotEmpty(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your $fieldName';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your email';
+    }
+    if (!RegExp(
+            r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+")
+        .hasMatch(value.trim())) {
+      return 'Please enter a valid email address';
+    }
+    return null;
+  }
+
+  String? _validateAadhaar(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your Aadhaar number';
+    }
+    if (value.trim().length != 12 ||
+        !RegExp(r'^[0-9]{12}$').hasMatch(value.trim())) {
+      return 'Aadhaar number must be 12 digits';
+    }
+    return null;
+  }
+
+  String? _validatePan(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your PAN number';
+    }
+    // Basic PAN format: ABCDE1234F
+    if (!RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$')
+        .hasMatch(value.trim().toUpperCase())) {
+      return 'Please enter a valid PAN number (e.g., ABCDE1234F)';
+    }
+    return null;
+  }
+
+  String? _validateVehicleNumber(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your vehicle number';
+    }
+    // Example: MH12AB1234 or MH-12-AB-1234 or MH 12 AB1234
+    // This is a basic regex, can be improved for stricter Indian formats
+    if (!RegExp(r'^[A-Z]{2}[ -]?[0-9]{1,2}[ -]?[A-Z]{0,3}[ -]?[0-9]{1,4}$')
+        .hasMatch(value.trim().toUpperCase())) {
+      return 'Please enter a valid vehicle number';
+    }
+    return null;
+  }
+
+  String? _validateIfsc(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your IFSC code';
+    }
+    // Basic IFSC format: ABCD0123456 (4 alpha, 1 zero, 6 alphanumeric)
+    if (!RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$')
+        .hasMatch(value.trim().toUpperCase())) {
+      return 'Please enter a valid IFSC code (e.g., ABCD0123456)';
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -83,89 +154,112 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  // Modified to simply go to the next step without validation
   void _nextStep() {
-    debugPrint('Moving to next step - current step: $_currentStep');
+    final isLastStep = _currentStep == 3; // Assuming 4 steps (0, 1, 2, 3)
+
+    // Validate the entire form.
+    // For per-step validation, this is a compromise. If validation fails,
+    // we check if the current step content has errors.
+    bool isValid = _formKey.currentState!.validate();
+
+    List<StepState> newStepStates = List.from(_stepStates);
+    if (!isValid) {
+      // Mark current step as error if validation fails.
+      // This is an approximation for per-step validation with a single FormKey.
+      // A more robust solution would involve validating only current step's fields.
+      newStepStates[_currentStep] = StepState.error;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please correct the errors before continuing.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } else {
+      // If valid, ensure current step is not marked as error
+      newStepStates[_currentStep] = StepState.complete;
+    }
+
     setState(() {
-      if (_currentStep < 3) {
-        _currentStep++;
-        debugPrint('Advanced to step: $_currentStep');
-      } else {
-        debugPrint('On final step, submitting form');
-        _submitForm();
-      }
+      _stepStates = newStepStates;
     });
+
+    if (isValid) {
+      if (isLastStep) {
+        debugPrint('On final step, attempting to submit form');
+        _submitForm();
+      } else {
+        setState(() {
+          _currentStep++;
+          debugPrint('Advanced to step: $_currentStep');
+        });
+      }
+    }
   }
 
   void _previousStep() {
     setState(() {
       if (_currentStep > 0) {
         _currentStep--;
+        // Optionally reset error state of future steps if user goes back
+        for (int i = _currentStep; i < _stepStates.length; i++) {
+          _stepStates[i] = StepState.indexed;
+        }
       }
     });
   }
 
   void _submitForm() {
+    // Validation should have been handled by _nextStep() before this is called on the final step.
+    // A final check can be here for safety if _submitForm could be invoked bypassing _nextStep's validation.
+    if (!_formKey.currentState!.validate()) {
+      // This path should ideally not be hit if _nextStep is the only way to _submitForm on the last step.
+      // If it is hit, individual fields will show their errors due to autovalidateMode.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please ensure all fields are correct before submitting.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      // Update step states to reflect errors if any were missed by _nextStep logic somehow
+      // This is a general sweep.
+      List<StepState> newStepStates = List.from(_stepStates);
+      bool anyErrors = false;
+      for (int i = 0; i < 4; i++) {
+        // Check all steps
+        // We can't easily know which step has an error with one form key without iterating fields.
+        // So, if the overall form is invalid, we mark any non-complete step as potentially indexed/error.
+        // This is imperfect. The primary visual feedback comes from field error texts.
+        if (newStepStates[i] != StepState.complete) {
+          // newStepStates[i] = StepState.error; // Could be too aggressive
+          // For now, rely on field error messages and the snackbar.
+        }
+      }
+      // setState(() { _stepStates = newStepStates; }); // Potentially skip this complex state update here
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Make sure all fields are non-null strings
-      final String name = _nameController.text.trim().isNotEmpty
-          ? _nameController.text.trim()
-          : "User";
+      final String name = _nameController.text.trim();
+      final String email = _emailController.text.trim();
+      final String address = _addressController.text.trim();
+      final String vehicleType = _vehicleTypeController.text.trim();
+      final String vehicleNumber = _vehicleNumberController.text.trim();
+      final String bankAccount = _bankAccountController.text.trim();
+      final String ifscCode = _ifscCodeController.text.trim();
+      final String aadharNumber = _aadharNumberController.text.trim();
+      final String panNumber = _panNumberController.text.trim();
+      final String drivingLicense = _drivingLicenseController.text.trim();
 
-      final String email = _emailController.text.trim().isNotEmpty
-          ? _emailController.text.trim()
-          : "user@example.com";
+      debugPrint('Submitting onboarding form with validated data.');
 
-      final String address = _addressController.text.trim().isNotEmpty
-          ? _addressController.text.trim()
-          : "Address";
-
-      final String vehicleType = _vehicleTypeController.text.trim().isNotEmpty
-          ? _vehicleTypeController.text.trim()
-          : "Bike";
-
-      final String vehicleNumber =
-          _vehicleNumberController.text.trim().isNotEmpty
-              ? _vehicleNumberController.text.trim()
-              : "MH12AB1234";
-
-      final String bankAccount = _bankAccountController.text.trim().isNotEmpty
-          ? _bankAccountController.text.trim()
-          : "1234567890";
-
-      final String ifscCode = _ifscCodeController.text.trim().isNotEmpty
-          ? _ifscCodeController.text.trim()
-          : "ABCD0123456";
-
-      final String aadharNumber = _aadharNumberController.text.trim().isNotEmpty
-          ? _aadharNumberController.text.trim()
-          : "123456789012";
-
-      final String panNumber = _panNumberController.text.trim().isNotEmpty
-          ? _panNumberController.text.trim()
-          : "ABCDE1234F";
-
-      final String drivingLicense =
-          _drivingLicenseController.text.trim().isNotEmpty
-              ? _drivingLicenseController.text.trim()
-              : "DL123456789";
-
-      debugPrint('Submitting onboarding form with:');
-      debugPrint('Name: $name');
-      debugPrint('Email: $email');
-      debugPrint('Address: $address');
-      debugPrint('Vehicle Type: $vehicleType');
-      debugPrint('Vehicle Number: $vehicleNumber');
-
-      // Clear onboarding in progress flag
       _storageService.setOnboardingInProgress(false);
       debugPrint('Onboarding in progress flag cleared');
 
-      // Use the cleaned-up variables directly
       context.read<AuthBloc>().add(
             CompleteOnboardingEvent(
               name: name,
@@ -249,13 +343,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         },
         child: Form(
           key: _formKey,
-          // Disable automatic validation
-          autovalidateMode: AutovalidateMode.disabled,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Stepper(
             currentStep: _currentStep,
             type: StepperType.vertical,
             physics: const ClampingScrollPhysics(),
-            // Simplified - just call _nextStep directly
             onStepContinue: _isLoading ? null : _nextStep,
             onStepCancel: _isLoading ? null : _previousStep,
             controlsBuilder: (context, details) {
@@ -270,7 +362,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        // Simply call _nextStep directly
                         onPressed: _isLoading ? null : _nextStep,
                         child: _isLoading
                             ? const SizedBox(
@@ -308,23 +399,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     CustomTextField(
                       controller: _nameController,
                       label: 'Full Name',
-                      // Remove validator to avoid validation issues
+                      validator: (value) =>
+                          _validateNotEmpty(value, 'full name'),
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _emailController,
                       label: 'Email',
                       keyboardType: TextInputType.emailAddress,
+                      validator: _validateEmail,
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _addressController,
                       label: 'Address',
                       maxLines: 3,
+                      validator: (value) => _validateNotEmpty(value, 'address'),
                     ),
                   ],
                 ),
                 isActive: _currentStep >= 0,
+                state: _stepStates[0],
               ),
               Step(
                 title: const Text('Vehicle Information'),
@@ -333,20 +428,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     CustomTextField(
                       controller: _vehicleTypeController,
                       label: 'Vehicle Type',
+                      validator: (value) =>
+                          _validateNotEmpty(value, 'vehicle type'),
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _vehicleNumberController,
                       label: 'Vehicle Number',
+                      validator: _validateVehicleNumber,
+                      textCapitalization: TextCapitalization.characters,
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _drivingLicenseController,
                       label: 'Driving License Number',
+                      validator: (value) =>
+                          _validateNotEmpty(value, 'driving license number'),
                     ),
                   ],
                 ),
                 isActive: _currentStep >= 1,
+                state: _stepStates[1],
               ),
               Step(
                 title: const Text('Documents'),
@@ -354,17 +456,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   children: [
                     CustomTextField(
                       controller: _aadharNumberController,
-                      label: 'Aadhar Number',
+                      label: 'Aadhaar Number',
                       keyboardType: TextInputType.number,
+                      validator: _validateAadhaar,
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _panNumberController,
                       label: 'PAN Number',
+                      validator: _validatePan,
+                      textCapitalization: TextCapitalization.characters,
                     ),
                   ],
                 ),
                 isActive: _currentStep >= 2,
+                state: _stepStates[2],
               ),
               Step(
                 title: const Text('Bank Details'),
@@ -374,15 +480,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       controller: _bankAccountController,
                       label: 'Bank Account Number',
                       keyboardType: TextInputType.number,
+                      validator: (value) =>
+                          _validateNotEmpty(value, 'bank account number'),
                     ),
                     const SizedBox(height: 16),
                     CustomTextField(
                       controller: _ifscCodeController,
                       label: 'IFSC Code',
+                      validator: _validateIfsc,
+                      textCapitalization: TextCapitalization.characters,
                     ),
                   ],
                 ),
                 isActive: _currentStep >= 3,
+                state: _stepStates[3],
               ),
             ],
           ),

@@ -68,16 +68,6 @@ class AuthSendingOtpState extends AuthState {}
 
 class AuthVerifyingOtpState extends AuthState {}
 
-class ProfileIncompleteState extends AuthState {
-  final String userId;
-  final String phoneNumber;
-
-  const ProfileIncompleteState({
-    required this.userId,
-    required this.phoneNumber,
-  });
-}
-
 class UserDetailsUpdatedState extends AuthState {
   final bool isSuccess;
   final String message;
@@ -86,6 +76,9 @@ class UserDetailsUpdatedState extends AuthState {
     required this.isSuccess,
     required this.message,
   });
+
+  @override
+  List<Object?> get props => [isSuccess, message];
 }
 
 /// State when updating user details

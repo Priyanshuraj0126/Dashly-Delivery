@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../blocs/order/order_bloc.dart';
 import '../../widgets/custom_button.dart';
 import 'order_details_screen.dart';
@@ -18,6 +19,15 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Timer? _autoRefreshTimer;
+
+  // Define a list of active in-progress statuses
+  final List<String> _activeStatuses = [
+    AppConstants.orderStatusOnTheWayToPickup,
+    AppConstants.orderStatusArrivedAtPickup,
+    AppConstants.orderStatusPickedUp,
+    AppConstants.orderStatusOutForDelivery,
+    AppConstants.orderStatusArrivedAtDelivery,
+  ];
 
   @override
   void initState() {
@@ -108,8 +118,8 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           tabs: const [
-            Tab(text: 'Active'),
             Tab(text: 'Upcoming'),
+            Tab(text: 'Active'),
             Tab(text: 'Past'),
           ],
         ),
@@ -117,130 +127,84 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildActiveOrdersTab(),
           _buildUpcomingOrdersTab(),
+          _buildActiveOrdersTab(),
           _buildPastOrdersTab(),
         ],
       ),
     );
   }
 
-  Widget _buildActiveOrdersTab() {
+  Widget _buildUpcomingOrdersTab() {
     return RefreshIndicator(
-      onRefresh: () async {
-        // Use our refresh helper method
-        _refreshOrders();
-      },
+      onRefresh: () async => _refreshOrders(),
       child: BlocBuilder<OrderBloc, OrderState>(
         buildWhen: (previous, current) =>
             current is OrderLoadingState ||
             current is ActiveOrdersLoadedState ||
-            current is NewOrdersStreamState ||
             current is OrderErrorState,
         builder: (context, state) {
-          debugPrint(
-              '_buildActiveOrdersTab: State type = ${state.runtimeType}');
-
-          // First check for loading state
           if (state is OrderLoadingState) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
+            return const Center(child: CircularProgressIndicator());
+          } else if (state is ActiveOrdersLoadedState) {
+            final upcomingOrders = state.orders.where((order) {
+              return order.status.toLowerCase() ==
+                  AppConstants.orderStatusAssigned;
+            }).toList();
 
-          // Handle NewOrdersStreamState first since it's the most important one for showing new orders
-          if (state is NewOrdersStreamState) {
-            final orders = state.orders;
-            debugPrint(
-                'NEW ORDERS STREAM IN ACTIVE TAB: ${orders.length} orders');
-
-            for (final order in orders) {
-              debugPrint(
-                  'STREAMING ORDER TO UI: ID=${order.id}, Status=${order.status}');
+            if (upcomingOrders.isEmpty) {
+              return _buildEmptyState('No upcoming orders assigned to you.');
             }
-
-            if (orders.isEmpty) {
-              // If there are no streaming orders, still show the empty state
-              // which will include the _buildNewOrdersSection
-              return _buildEmptyState('No active orders');
-            }
-
-            // If we have streaming orders, show them
-            debugPrint('DISPLAYING ${orders.length} STREAMING ORDERS IN UI');
             return ListView.builder(
               padding: const EdgeInsets.all(16.0),
-              itemCount: orders.length,
-              itemBuilder: (context, index) {
-                final order = orders[index];
-                debugPrint(
-                    'DISPLAYING ORDER: ID=${order.id}, Status=${order.status}');
-                return _buildOrderCard(order);
-              },
-            );
-          }
-
-          // Then check for active orders
-          else if (state is ActiveOrdersLoadedState) {
-            final orders = state.orders;
-            debugPrint('ACTIVE ORDERS LOADED: ${orders.length} orders');
-
-            if (orders.isEmpty) {
-              return _buildEmptyState('No active orders');
-            }
-
-            debugPrint('DISPLAYING ${orders.length} ACTIVE ORDERS IN UI');
-            return ListView.builder(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: orders.length,
-              itemBuilder: (context, index) {
-                final order = orders[index];
-                debugPrint(
-                    'DISPLAYING ORDER: ID=${order.id}, Status=${order.status}');
-                return _buildOrderCard(order);
-              },
+              itemCount: upcomingOrders.length,
+              itemBuilder: (context, index) =>
+                  _buildOrderCard(upcomingOrders[index]),
             );
           } else if (state is OrderErrorState) {
-            debugPrint('ORDER ERROR: ${state.message}');
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    color: AppColors.error,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error: ${state.message}',
-                    style: TextStyle(color: AppColors.error),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  CustomButton(
-                    text: 'Retry',
-                    onPressed: () {
-                      context.read<OrderBloc>().add(FetchActiveOrdersEvent());
-                      context
-                          .read<OrderBloc>()
-                          .add(StartListeningForNewOrdersEvent());
-                    },
-                  ),
-                ],
-              ),
-            );
+            return _buildErrorState(state.message,
+                () => context.read<OrderBloc>().add(FetchActiveOrdersEvent()));
           }
-
-          debugPrint('NO MATCHING STATE TO DISPLAY ORDERS');
-          return _buildEmptyState('No data available');
+          return _buildEmptyState('No upcoming orders.');
         },
       ),
     );
   }
 
-  Widget _buildUpcomingOrdersTab() {
-    // For MVP, we are showing just a placeholder for upcoming orders
-    return _buildEmptyState('No upcoming orders');
+  Widget _buildActiveOrdersTab() {
+    return RefreshIndicator(
+      onRefresh: () async => _refreshOrders(),
+      child: BlocBuilder<OrderBloc, OrderState>(
+        buildWhen: (previous, current) =>
+            current is OrderLoadingState ||
+            current is ActiveOrdersLoadedState ||
+            current is OrderErrorState,
+        builder: (context, state) {
+          if (state is OrderLoadingState) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (state is ActiveOrdersLoadedState) {
+            final activeInProgressOrders = state.orders.where((order) {
+              final status = order.status.toLowerCase();
+              return _activeStatuses.contains(status);
+            }).toList();
+
+            if (activeInProgressOrders.isEmpty) {
+              return _buildEmptyState('No active orders in progress.');
+            }
+            return ListView.builder(
+              padding: const EdgeInsets.all(16.0),
+              itemCount: activeInProgressOrders.length,
+              itemBuilder: (context, index) =>
+                  _buildOrderCard(activeInProgressOrders[index]),
+            );
+          } else if (state is OrderErrorState) {
+            return _buildErrorState(state.message,
+                () => context.read<OrderBloc>().add(FetchActiveOrdersEvent()));
+          }
+          return _buildEmptyState('No active orders currently.');
+        },
+      ),
+    );
   }
 
   Widget _buildPastOrdersTab() {
@@ -249,27 +213,41 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
         context.read<OrderBloc>().add(FetchOrderHistoryEvent());
       },
       child: BlocBuilder<OrderBloc, OrderState>(
+        buildWhen: (previous, current) =>
+            current is OrderLoadingState ||
+            current is OrderHistoryLoadedState ||
+            current is OrderErrorState,
         builder: (context, state) {
+          debugPrint('_buildPastOrdersTab: State type = ${state.runtimeType}');
+
           if (state is OrderLoadingState) {
             return const Center(
               child: CircularProgressIndicator(),
             );
           } else if (state is OrderHistoryLoadedState) {
-            if (state.orders.isEmpty) {
-              return _buildEmptyState('No past orders');
+            final orders = state.orders;
+            debugPrint('PAST ORDERS: ${orders.length} orders');
+
+            if (orders.isEmpty) {
+              return _buildEmptyState('No past orders found');
             }
 
             return ListView.builder(
               padding: const EdgeInsets.all(16.0),
-              itemCount: state.orders.length,
+              itemCount: orders.length,
               itemBuilder: (context, index) {
-                final order = state.orders[index];
-                return _buildOrderCard(order, isPastOrder: true);
+                final order = orders[index];
+                return _buildOrderCard(order);
               },
             );
+          } else if (state is OrderErrorState) {
+            debugPrint('ORDER ERROR (Past Tab): ${state.message}');
+            return _buildErrorState(state.message,
+                () => context.read<OrderBloc>().add(FetchOrderHistoryEvent()));
           }
 
-          return _buildEmptyState('No past orders available');
+          debugPrint('NO MATCHING STATE TO DISPLAY PAST ORDERS');
+          return _buildEmptyState('No past orders available.');
         },
       ),
     );
@@ -286,10 +264,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Always show new orders section at the top if available
             _buildNewOrdersSection(),
-
-            // Empty state content below
             Icon(
               Icons.local_shipping_outlined,
               size: 80,
@@ -327,7 +302,6 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
             CustomButton(
               text: 'Refresh Orders',
               onPressed: () {
-                // Use our refresh helper method
                 _refreshOrders();
               },
               icon: Icons.refresh,
@@ -335,7 +309,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
             const SizedBox(height: 16),
             TextButton.icon(
               onPressed: () {
-                Navigator.pop(context); // Return to the main screen
+                Navigator.pop(context);
               },
               icon: const Icon(Icons.work_outline, size: 28),
               label: Text(
@@ -401,88 +375,94 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
 
   Widget _buildNewOrdersSection() {
     return BlocBuilder<OrderBloc, OrderState>(
+      buildWhen: (previous, current) =>
+          current is NewOrdersStreamState || current is ActiveOrdersLoadedState,
       builder: (context, state) {
-        debugPrint('_buildNewOrdersSection: State type = ${state.runtimeType}');
+        debugPrint(
+            '_buildNewOrdersSection: Building with state type = ${state.runtimeType}');
+
+        List<dynamic> newOrders = [];
 
         if (state is NewOrdersStreamState) {
+          newOrders = state.orders;
           debugPrint(
-              '_buildNewOrdersSection: Found ${state.orders.length} orders');
+              '_buildNewOrdersSection: Found ${newOrders.length} orders in NewOrdersStreamState');
+        } else if (state is ActiveOrdersLoadedState) {
+          newOrders = state.orders.where((order) {
+            final isValidStatus = order.status == "WAITING_FOR_DRIVER" ||
+                order.status == "PLACED";
+            final isNotAssigned =
+                order.deliveryBoyId == null || order.deliveryBoyId!.isEmpty;
+            return isValidStatus && isNotAssigned;
+          }).toList();
 
-          for (final order in state.orders) {
-            debugPrint(
-                '_buildNewOrdersSection ORDER: ID=${order.id}, Status=${order.status}');
-          }
+          debugPrint(
+              '_buildNewOrdersSection: Found ${newOrders.length} unassigned orders in ActiveOrdersLoadedState');
+        } else {
+          debugPrint(
+              '_buildNewOrdersSection: State is not a recognized state with orders: ${state.runtimeType}');
+        }
 
-          if (state.orders.isNotEmpty) {
-            return Card(
-              elevation: 3,
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                      color: AppColors.success.withOpacity(0.5), width: 2)),
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        topRight: Radius.circular(12),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12, horizontal: 16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.notifications_active,
-                            color: AppColors.success),
-                        const SizedBox(width: 8),
-                        Text(
-                          'New Orders Available!',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ],
+        for (final order in newOrders) {
+          debugPrint(
+              'Found unassigned order: ${order.id} with status ${order.status}');
+        }
+
+        if (newOrders.isNotEmpty) {
+          return Card(
+            elevation: 3,
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                    color: AppColors.success.withOpacity(0.5), width: 2)),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
                     ),
                   ),
-                  ListView.builder(
-                    physics: const NeverScrollableScrollPhysics(),
-                    shrinkWrap: true,
-                    itemCount: state.orders.length.clamp(0, 3),
-                    itemBuilder: (context, index) {
-                      final order = state.orders[index];
-                      return ListTile(
-                        title: Text(
-                          'Order #${order.id.substring(0, 6)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.notifications_active,
+                          color: AppColors.success),
+                      const SizedBox(width: 8),
+                      Text(
+                        'New Orders Available!',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppColors.success,
                         ),
-                        subtitle: Text(
-                          'From: ${order.store.name}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    OrderDetailsScreen(orderId: order.id),
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.success,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('View'),
-                        ),
-                        onTap: () {
+                      ),
+                    ],
+                  ),
+                ),
+                ListView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  itemCount: newOrders.length.clamp(0, 3),
+                  itemBuilder: (context, index) {
+                    final order = newOrders[index];
+                    return ListTile(
+                      title: Text(
+                        'Order #${order.id.substring(0, 6)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        'From: ${order.store.name}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -491,17 +471,29 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
                             ),
                           );
                         },
-                      );
-                    },
-                  ),
-                ],
-              ),
-            );
-          }
-        } else {
-          debugPrint(
-              '_buildNewOrdersSection: State is not NewOrdersStreamState');
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('View'),
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                OrderDetailsScreen(orderId: order.id),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
         }
+
         return const SizedBox.shrink();
       },
     );
@@ -511,7 +503,6 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
     final orderStatus = order.status;
     debugPrint('ORDER CARD: ID=${order.id}, Status=$orderStatus');
 
-    // Show any PLACED or WAITING_FOR_DRIVER status as 'New' in the UI
     final displayStatus =
         (orderStatus == 'PLACED' || orderStatus == 'WAITING_FOR_DRIVER')
             ? 'New'
@@ -541,7 +532,6 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
         statusColor = AppColors.textSecondary;
     }
 
-    // Determine if the order should show accept/reject buttons
     final isNewOrder =
         orderStatus == 'PLACED' || orderStatus == 'WAITING_FOR_DRIVER';
 
@@ -593,7 +583,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '₹${order.amount.toStringAsFixed(2)}',
+                      '₹${order.totalAmount.toStringAsFixed(2)}',
                       style: TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.bold,
@@ -796,16 +786,49 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
     );
   }
 
-  // Helper method to refresh orders
   void _refreshOrders() {
     if (!mounted) return;
-    // First stop any existing listeners to avoid duplicates
+
+    debugPrint('Refreshing orders manually');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Refreshing orders...'),
+        duration: const Duration(seconds: 1),
+        backgroundColor: AppColors.primary,
+      ),
+    );
+
     context.read<OrderBloc>().add(StopListeningForNewOrdersEvent());
 
-    // Start fresh with the order fetching
     context.read<OrderBloc>().add(FetchActiveOrdersEvent());
 
-    // Start listening for new orders immediately
     context.read<OrderBloc>().add(StartListeningForNewOrdersEvent());
+  }
+
+  Widget _buildErrorState(String message, VoidCallback onRetry) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: AppColors.error, size: 60),
+            const SizedBox(height: 16),
+            Text(
+              'Error: $message',
+              style: TextStyle(color: AppColors.error, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            CustomButton(
+              text: 'Retry',
+              onPressed: onRetry,
+              width: 150,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

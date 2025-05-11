@@ -185,13 +185,22 @@ class StartListeningForNewOrdersEvent extends OrderEvent {}
 
 class StopListeningForNewOrdersEvent extends OrderEvent {}
 
+class UpdateDeliveryBoyStatusEvent extends OrderEvent {
+  final String status;
+
+  const UpdateDeliveryBoyStatusEvent({required this.status});
+
+  @override
+  List<Object> get props => [status];
+}
+
 class ListenForSpecificOrderEvent extends OrderEvent {
   final String orderId;
 
-  const ListenForSpecificOrderEvent(this.orderId);
+  const ListenForSpecificOrderEvent({required this.orderId});
 
   @override
-  List<Object?> get props => [orderId];
+  List<Object> get props => [orderId];
 }
 
 class StopListeningForSpecificOrderEvent extends OrderEvent {
@@ -199,6 +208,30 @@ class StopListeningForSpecificOrderEvent extends OrderEvent {
 
   const StopListeningForSpecificOrderEvent(this.orderId);
 
+  @override
+  List<Object?> get props => [orderId];
+}
+
+class FetchNewOrdersEvent extends OrderEvent {}
+
+// New Events for Delivery Flow
+class StartPickupJourneyEvent extends OrderEvent {
+  final String orderId;
+  const StartPickupJourneyEvent({required this.orderId});
+  @override
+  List<Object?> get props => [orderId];
+}
+
+class ArrivedAtStoreEvent extends OrderEvent {
+  final String orderId;
+  const ArrivedAtStoreEvent({required this.orderId});
+  @override
+  List<Object?> get props => [orderId];
+}
+
+class ArrivedAtCustomerEvent extends OrderEvent {
+  final String orderId;
+  const ArrivedAtCustomerEvent({required this.orderId});
   @override
   List<Object?> get props => [orderId];
 }
@@ -268,14 +301,16 @@ class OrderDetailsLoadedState extends OrderState {
 class OrderStatusUpdatedState extends OrderState {
   final String orderId;
   final String status;
+  final bool isAcceptingOrRejecting;
 
   const OrderStatusUpdatedState({
     required this.orderId,
     required this.status,
+    this.isAcceptingOrRejecting = true,
   });
 
   @override
-  List<Object?> get props => [orderId, status];
+  List<Object?> get props => [orderId, status, isAcceptingOrRejecting];
 }
 
 class OrderCompletedState extends OrderState {
@@ -370,6 +405,10 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     on<StopListeningForNewOrdersEvent>(_onStopListeningForNewOrders);
     on<ListenForSpecificOrderEvent>(_onListenForSpecificOrder);
     on<StopListeningForSpecificOrderEvent>(_onStopListeningForSpecificOrder);
+    on<UpdateDeliveryBoyStatusEvent>(_onUpdateDeliveryBoyStatus);
+    on<StartPickupJourneyEvent>(_onStartPickupJourney);
+    on<ArrivedAtStoreEvent>(_onArrivedAtStore);
+    on<ArrivedAtCustomerEvent>(_onArrivedAtCustomer);
   }
 
   @override
@@ -388,10 +427,28 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
   ) async {
     emit(OrderLoadingState());
     try {
-      final orders = await orderRepository.getActiveOrders();
-      emit(ActiveOrdersLoadedState(orders));
+      // Fetch and emit ONLY active, assigned orders
+      final activeOrders = await orderRepository.getActiveOrders();
+      debugPrint('Fetched ${activeOrders.length} active/assigned orders');
+      emit(ActiveOrdersLoadedState(activeOrders));
     } catch (e) {
+      debugPrint('Error fetching active orders: $e');
       emit(OrderErrorState(e.toString()));
+    }
+  }
+
+  // Helper method to fetch unassigned orders for MVP
+  // This method is no longer called by _onFetchActiveOrders.
+  // It might still be used by other parts of the bloc or can be removed if confirmed unused.
+  Future<List<order_model.Order>> _fetchUnassignedOrders() async {
+    try {
+      // Get directly from repository's stream method (take just the first result)
+      final notifications = await orderRepository.listenForNewOrders().first;
+      debugPrint('Found ${notifications.length} unassigned orders from stream');
+      return notifications;
+    } catch (e) {
+      debugPrint('Error fetching unassigned orders: $e');
+      return [];
     }
   }
 
@@ -449,15 +506,30 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     AcceptOrderEvent event,
     Emitter<OrderState> emit,
   ) async {
+    emit(OrderLoadingState());
     try {
-      emit(OrderLoadingState());
-      await orderRepository.acceptOrder(event.orderId);
-      emit(OrderStatusUpdatedState(
-        orderId: event.orderId,
-        status: AppConstants.orderStatusAssigned,
-      ));
-    } catch (e) {
-      emit(OrderErrorState(e.toString()));
+      final bool accepted = await orderRepository.acceptOrder(event.orderId);
+
+      if (accepted) {
+        emit(OrderStatusUpdatedState(
+          orderId: event.orderId,
+          status: AppConstants.orderStatusAssigned,
+          isAcceptingOrRejecting: false,
+        ));
+        add(FetchActiveOrdersEvent());
+        add(FetchNewOrdersEvent());
+      } else {
+        emit(const OrderErrorState(
+            "Order could not be accepted. It might have been assigned to someone else or is no longer available."));
+        add(FetchNewOrdersEvent());
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        print('Error accepting order: $e');
+        print(stackTrace);
+      }
+      emit(OrderErrorState("Failed to accept order: ${e.toString()}"));
+      add(FetchNewOrdersEvent());
     }
   }
 
@@ -465,15 +537,31 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     RejectOrderEvent event,
     Emitter<OrderState> emit,
   ) async {
+    emit(OrderLoadingState());
     try {
-      emit(OrderLoadingState());
-      await orderRepository.rejectOrder(event.orderId, event.reason);
-      emit(OrderStatusUpdatedState(
-        orderId: event.orderId,
-        status: 'rejected',
-      ));
-    } catch (e) {
-      emit(OrderErrorState(e.toString()));
+      final bool rejected =
+          await orderRepository.rejectOrder(event.orderId, event.reason);
+
+      if (rejected) {
+        emit(OrderStatusUpdatedState(
+          orderId: event.orderId,
+          status: 'rejected',
+          isAcceptingOrRejecting: false,
+        ));
+        add(FetchNewOrdersEvent());
+        add(FetchActiveOrdersEvent());
+      } else {
+        emit(const OrderErrorState(
+            "Order could not be rejected. Its status might have changed."));
+        add(FetchNewOrdersEvent());
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        print('Error rejecting order: $e');
+        print(stackTrace);
+      }
+      emit(OrderErrorState("Failed to reject order: ${e.toString()}"));
+      add(FetchNewOrdersEvent());
     }
   }
 
@@ -727,46 +815,29 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
     Emitter<OrderState> emit,
   ) async {
     try {
-      debugPrint('Starting to listen for new orders');
+      debugPrint('Starting to listen for new orders in real-time');
 
       // Cancel existing subscription if any
       _newOrdersSubscription?.cancel();
-
-      // Start with a loading state to indicate we're fetching orders
-      emit(OrderLoadingState());
 
       // Subscribe to order updates
       _newOrdersSubscription = orderRepository.listenForNewOrders().listen(
         (orders) {
           if (!emit.isDone) {
-            // Debug info - print what orders we're receiving
-            debugPrint('Received ${orders.length} orders from stream');
-
-            for (final order in orders) {
-              debugPrint(
-                  'STREAMING ORDER: ID=${order.id}, Status=${order.status}');
-            }
-
-            // Filter orders to include both WAITING_FOR_DRIVER and PLACED status
-            // Only show orders not assigned to a delivery boy
+            // For MVP: Show all unassigned orders to all delivery boys
+            // Only filter based on status, don't check delivery boy ID or zones
             final filteredOrders = orders.where((order) {
               final isValidStatus = order.status == "WAITING_FOR_DRIVER" ||
                   order.status == "PLACED";
               final isNotAssigned =
                   order.deliveryBoyId == null || order.deliveryBoyId!.isEmpty;
 
-              if (isValidStatus && isNotAssigned) {
-                debugPrint('VALID ORDER FOR UI: ${order.id}');
-                return true;
-              }
-
-              debugPrint(
-                  'FILTERED OUT ORDER: ${order.id}, Status=${order.status}, AssignedTo=${order.deliveryBoyId}');
-              return false;
+              return isValidStatus && isNotAssigned;
             }).toList();
 
-            debugPrint('EMITTING ${filteredOrders.length} ORDERS TO UI');
-            // Always emit the state, even if the list is empty
+            debugPrint('Returning ${filteredOrders.length} unique orders');
+
+            // Always emit the NewOrdersStreamState for unassigned orders
             emit(NewOrdersStreamState(filteredOrders));
           }
         },
@@ -828,5 +899,199 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
   ) {
     _orderUpdatesSubscriptions[event.orderId]?.cancel();
     _orderUpdatesSubscriptions.remove(event.orderId);
+  }
+
+  FutureOr<void> _onUpdateDeliveryBoyStatus(
+    UpdateDeliveryBoyStatusEvent event,
+    Emitter<OrderState> emit,
+  ) async {
+    emit(OrderLoadingState());
+    try {
+      final result =
+          await deliveryRepository.updateDeliveryBoyStatus(event.status);
+
+      if (result) {
+        emit(OrderStatusUpdatedState(
+          orderId: '',
+          status: event.status,
+        ));
+      } else {
+        emit(const OrderErrorState('Failed to update delivery boy status'));
+      }
+    } catch (e) {
+      emit(OrderErrorState(e.toString()));
+    }
+  }
+
+  FutureOr<void> _onStartPickupJourney(
+    StartPickupJourneyEvent event,
+    Emitter<OrderState> emit,
+  ) async {
+    emit(OrderLoadingState());
+    try {
+      final bool repoResult =
+          await deliveryRepository.startOrderPickup(event.orderId);
+      if (repoResult) {
+        final order_model.Order? fetchedOrder =
+            await orderRepository.getOrderById(event.orderId);
+        if (fetchedOrder != null) {
+          // Explicitly reconstruct to ensure all required fields are present if there's a subtle issue with fetchedOrder
+          final reconstructedOrder = order_model.Order(
+            id: fetchedOrder.id,
+            customerId: fetchedOrder.customerId,
+            vendorId: fetchedOrder.vendorId,
+            deliveryBoyId: fetchedOrder.deliveryBoyId,
+            status: fetchedOrder.status,
+            items: fetchedOrder.items, // This is the critical part
+            pickupAddress: fetchedOrder.pickupAddress,
+            deliveryAddress: fetchedOrder.deliveryAddress,
+            payment: fetchedOrder.payment,
+            timestamps: fetchedOrder.timestamps,
+            store: fetchedOrder.store,
+            totalAmount: fetchedOrder.totalAmount,
+            specialInstructions: fetchedOrder.specialInstructions,
+            deliveryBoyLocation: fetchedOrder.deliveryBoyLocation,
+            estimatedTime: fetchedOrder.estimatedTime,
+            actualTime: fetchedOrder.actualTime,
+            ratings: fetchedOrder.ratings,
+            issues: fetchedOrder.issues,
+            createdAt: fetchedOrder.createdAt,
+            updatedAt: fetchedOrder.updatedAt,
+            customer: fetchedOrder.customer, // Accessing the getter
+            distance: fetchedOrder.distance,
+            deliveryCharges: fetchedOrder.deliveryCharges,
+            completedAt: fetchedOrder.completedAt,
+            paymentMethod: fetchedOrder.paymentMethod,
+            storeId: fetchedOrder.storeId,
+          );
+          emit(OrderDetailsLoadedState(
+              order: reconstructedOrder, items: fetchedOrder.items));
+          emit(OrderStatusUpdatedState(
+              orderId: event.orderId,
+              status: AppConstants.orderStatusOnTheWayToPickup));
+        } else {
+          emit(const OrderErrorState(
+              'Failed to get order details after starting pickup journey'));
+        }
+      } else {
+        emit(const OrderErrorState('Failed to start pickup journey'));
+      }
+    } catch (e) {
+      emit(OrderErrorState('Error starting pickup journey: ${e.toString()}'));
+    }
+  }
+
+  FutureOr<void> _onArrivedAtStore(
+    ArrivedAtStoreEvent event,
+    Emitter<OrderState> emit,
+  ) async {
+    emit(OrderLoadingState());
+    try {
+      final bool repoResult =
+          await deliveryRepository.markAsArrivedAtPickup(event.orderId);
+      if (repoResult) {
+        final order_model.Order? fetchedOrder =
+            await orderRepository.getOrderById(event.orderId);
+        if (fetchedOrder != null) {
+          final reconstructedOrder = order_model.Order(
+            id: fetchedOrder.id,
+            customerId: fetchedOrder.customerId,
+            vendorId: fetchedOrder.vendorId,
+            deliveryBoyId: fetchedOrder.deliveryBoyId,
+            status: fetchedOrder.status,
+            items: fetchedOrder.items,
+            pickupAddress: fetchedOrder.pickupAddress,
+            deliveryAddress: fetchedOrder.deliveryAddress,
+            payment: fetchedOrder.payment,
+            timestamps: fetchedOrder.timestamps,
+            store: fetchedOrder.store,
+            totalAmount: fetchedOrder.totalAmount,
+            specialInstructions: fetchedOrder.specialInstructions,
+            deliveryBoyLocation: fetchedOrder.deliveryBoyLocation,
+            estimatedTime: fetchedOrder.estimatedTime,
+            actualTime: fetchedOrder.actualTime,
+            ratings: fetchedOrder.ratings,
+            issues: fetchedOrder.issues,
+            createdAt: fetchedOrder.createdAt,
+            updatedAt: fetchedOrder.updatedAt,
+            customer: fetchedOrder.customer,
+            distance: fetchedOrder.distance,
+            deliveryCharges: fetchedOrder.deliveryCharges,
+            completedAt: fetchedOrder.completedAt,
+            paymentMethod: fetchedOrder.paymentMethod,
+            storeId: fetchedOrder.storeId,
+          );
+          emit(OrderDetailsLoadedState(
+              order: reconstructedOrder, items: fetchedOrder.items));
+          emit(OrderStatusUpdatedState(
+              orderId: event.orderId,
+              status: AppConstants.orderStatusArrivedAtPickup));
+        } else {
+          emit(const OrderErrorState(
+              'Failed to get order details after arriving at store'));
+        }
+      } else {
+        emit(const OrderErrorState('Failed to mark as arrived at store'));
+      }
+    } catch (e) {
+      emit(OrderErrorState('Error arriving at store: ${e.toString()}'));
+    }
+  }
+
+  FutureOr<void> _onArrivedAtCustomer(
+    ArrivedAtCustomerEvent event,
+    Emitter<OrderState> emit,
+  ) async {
+    emit(OrderLoadingState());
+    try {
+      final bool repoResult = await deliveryRepository
+          .markAsArrivedAtDeliveryLocation(event.orderId);
+      if (repoResult) {
+        final order_model.Order? fetchedOrder =
+            await orderRepository.getOrderById(event.orderId);
+        if (fetchedOrder != null) {
+          final reconstructedOrder = order_model.Order(
+            id: fetchedOrder.id,
+            customerId: fetchedOrder.customerId,
+            vendorId: fetchedOrder.vendorId,
+            deliveryBoyId: fetchedOrder.deliveryBoyId,
+            status: fetchedOrder.status,
+            items: fetchedOrder.items,
+            pickupAddress: fetchedOrder.pickupAddress,
+            deliveryAddress: fetchedOrder.deliveryAddress,
+            payment: fetchedOrder.payment,
+            timestamps: fetchedOrder.timestamps,
+            store: fetchedOrder.store,
+            totalAmount: fetchedOrder.totalAmount,
+            specialInstructions: fetchedOrder.specialInstructions,
+            deliveryBoyLocation: fetchedOrder.deliveryBoyLocation,
+            estimatedTime: fetchedOrder.estimatedTime,
+            actualTime: fetchedOrder.actualTime,
+            ratings: fetchedOrder.ratings,
+            issues: fetchedOrder.issues,
+            createdAt: fetchedOrder.createdAt,
+            updatedAt: fetchedOrder.updatedAt,
+            customer: fetchedOrder.customer,
+            distance: fetchedOrder.distance,
+            deliveryCharges: fetchedOrder.deliveryCharges,
+            completedAt: fetchedOrder.completedAt,
+            paymentMethod: fetchedOrder.paymentMethod,
+            storeId: fetchedOrder.storeId,
+          );
+          emit(OrderDetailsLoadedState(
+              order: reconstructedOrder, items: fetchedOrder.items));
+          emit(OrderStatusUpdatedState(
+              orderId: event.orderId,
+              status: AppConstants.orderStatusArrivedAtDelivery));
+        } else {
+          emit(const OrderErrorState(
+              'Failed to get order details after arriving at customer'));
+        }
+      } else {
+        emit(const OrderErrorState('Failed to mark as arrived at customer'));
+      }
+    } catch (e) {
+      emit(OrderErrorState('Error arriving at customer: ${e.toString()}'));
+    }
   }
 }

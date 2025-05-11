@@ -8,39 +8,25 @@ import '../dashboard/home_screen.dart';
 import '../onboarding/onboarding_screen.dart';
 
 /// A widget that handles authentication state and routes users to appropriate screens
-class AuthWrapper extends StatefulWidget {
+class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-
-  @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
-}
-
-class _AuthWrapperState extends State<AuthWrapper> {
-  bool _isNavigating = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    // Check auth state and update navigation flag outside of build method
-    final state = context.read<AuthBloc>().state;
-    if (state is AuthAuthenticatedState && !_isNavigating) {
-      debugPrint('Setting navigation flag in didChangeDependencies');
-      _isNavigating = true;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthBloc, AuthState>(
       buildWhen: (previous, current) {
-        // Only rebuild on significant state changes to prevent flickering
-        if (_isNavigating) return false;
-
+        // Always rebuild if the type of state changes
+        if (previous.runtimeType != current.runtimeType) {
+          return true;
+        }
+        // If both are AuthAuthenticatedState, rebuild only if isProfileComplete changes
         if (previous is AuthAuthenticatedState &&
             current is AuthAuthenticatedState) {
           return previous.isProfileComplete != current.isProfileComplete;
         }
+        // For other state types (e.g. AuthErrorState with different messages),
+        // allow rebuild if they are not AuthAuthenticatedState.
+        // This ensures UI updates for changes like error messages.
         return true;
       },
       builder: (context, state) {
@@ -57,14 +43,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (state is AuthAuthenticatedState) {
           debugPrint(
               'AuthWrapper: User authenticated with profile complete: ${state.isProfileComplete}');
-
-          // No setState here - flag is updated in didChangeDependencies
-
           if (state.isProfileComplete) {
             return const HomeScreen();
           } else {
-            // Navigate to onboarding without forcing profile status change
-            // This prevents triggering additional auth state changes
             return const OnboardingScreen();
           }
         }
@@ -76,6 +57,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
+        // Default to LoginScreen for AuthUnauthenticatedState, AuthInitialState, AuthErrorState etc.
         return const LoginScreen();
       },
     );
